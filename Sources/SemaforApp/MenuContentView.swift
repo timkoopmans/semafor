@@ -15,6 +15,13 @@ struct MenuContentView: View {
                     .foregroundStyle(.secondary)
                     .padding(12)
             }
+            if let divergence = model.divergenceText {
+                Label(divergence, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .padding(10)
+                Divider()
+            }
             ForEach(Array(model.sections.enumerated()), id: \.offset) { index, section in
                 if index > 0 { Divider() }
                 sectionView(section)
@@ -31,6 +38,22 @@ struct MenuContentView: View {
             HStack(spacing: 6) {
                 Text(section.glyph)
                 Text(section.displayName).font(.headline)
+                Spacer(minLength: 4)
+                if let chip = section.verdictChip {
+                    Text(chip)
+                        .font(.caption2.monospacedDigit())
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background {
+                            Capsule().fill(SemaforApp.color(for: section.chipColor).opacity(0.18))
+                        }
+                        .overlay {
+                            Capsule().stroke(SemaforApp.color(for: section.chipColor).opacity(0.6),
+                                             lineWidth: 1)
+                        }
+                        .foregroundStyle(SemaforApp.color(for: section.chipColor))
+                }
+                SparklinePair(ttft: section.sparkTTFT, tokPerSec: section.sparkTokPerSec)
             }
             if let headline = section.headline {
                 Text(headline)
@@ -44,6 +67,11 @@ struct MenuContentView: View {
                 Text(section.statusLine)
                     .font(.caption)
                     .foregroundStyle(.orange)
+            }
+            if let measured = section.measuredText {
+                Text(measured)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
         }
         .padding(10)

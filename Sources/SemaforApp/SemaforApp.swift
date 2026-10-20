@@ -8,19 +8,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Owns the live object graph and republishes scheduler state for SwiftUI:
-/// sections + status title rebuild on every scheduler update and on a 30 s
-/// tick so countdown text stays fresh.
+/// Owns the live object graph and republishes scheduler/prober state for
+/// SwiftUI: sections + status title rebuild on every scheduler or prober
+/// update and on a 30 s tick so countdown text stays fresh.
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var sections: [ProviderSectionModel] = []
     @Published private(set) var status = StatusItemModel.title(
         for: [:], pollInterval: 300, now: Date())
     @Published private(set) var paused = false
+    @Published private(set) var divergenceText: String?
 
     let settings: AppSettings
     let store: SampleStore
     private let scheduler: PollScheduler
+    private let prober: PassiveProber
     private var latestSnapshots: [ProviderID: ProviderSnapshot] = [:]
     private var started = false
 
@@ -39,10 +41,29 @@ final class AppModel: ObservableObject {
         self.store = store
         self.scheduler = PollScheduler(providers: providers, writer: store, settings: settings)
 
+        let tailer = SessionLogTailer(
+            stateURL: directory.appendingPathComponent("tailer-state.json"))
+        self.prober = PassiveProber(
+            providers: providers,
+            tailer: tailer,
+            extractors: [
+                .claude: ClaudeLogExtractor(),
+                .codex: CodexLogExtractor(),
+            ],
+            control: ControlProbe(http: http),
+            writer: store,
+            settings: settings)
+
         let updates = scheduler.updates()
         Task { [weak self] in
             for await snapshots in updates {
                 await self?.apply(snapshots)
+            }
+        }
+        let probeUpdates = prober.updates()
+        Task { [weak self] in
+            for await _ in probeUpdates {
+                await self?.applyLatest()
             }
         }
         Task { [weak self] in
@@ -68,12 +89,15 @@ final class AppModel: ObservableObject {
         guard !started else { return }
         started = true
         Task { await scheduler.start() }
+        Task { await prober.start() }  // backfills, then scans the CLI logs
     }
 
     func refreshAll() {
         Task {
             await scheduler.refresh(.claude)
             await scheduler.refresh(.codex)
+            await prober.scanNow()
+            await applyLatest()
         }
     }
 
@@ -81,6 +105,7 @@ final class AppModel: ObservableObject {
         paused.toggle()
         let value = paused
         Task { await scheduler.setPaused(value) }
+        Task { await prober.setPaused(value) }
     }
 
     func resetData() {
@@ -96,6 +121,43 @@ final class AppModel: ObservableObject {
         let now = Date()
         let pollInterval = TimeInterval(settings.pollIntervalMinutes * 60)
         let since = now.addingTimeInterval(-24 * 3600)
+        let probeSince = now.addingTimeInterval(-30 * 24 * 3600)  // store window for verdicts/sparklines
+        let thresholds = settings.thresholds
+        let baseline = BaselineEngine(thresholds: thresholds)
+
+        var verdicts: [ProviderID: Verdict] = [:]
+        var probesByProvider: [ProviderID: (probes: [ProbeSample], controls: [ControlSample])] = [:]
+        for id in [ProviderID.claude, .codex] {
+            guard let snapshot = latestSnapshots[id] else { continue }
+            let probes = await store.probeSamples(provider: id, since: probeSince)
+            let controls = await store.controlSamples(since: probeSince)
+            probesByProvider[id] = (probes, controls)
+
+            var paceStatuses: [WindowName: BurnRateEstimator.PaceStatus] = [:]
+            for window in snapshot.windows {
+                paceStatuses[window.name] = BurnRateEstimator.pace(
+                    usedPercent: window.usedPercent,
+                    windowSeconds: window.windowSeconds,
+                    resetsAt: window.resetsAt,
+                    now: now,
+                    threshold: settings.paceDeltaPoints)
+            }
+            verdicts[id] = VerdictEngine.verdict(
+                for: id,
+                input: VerdictInput(
+                    snapshot: snapshot, probes: probes, controls: controls,
+                    paceStatuses: paceStatuses),
+                baseline: baseline, thresholds: thresholds, now: now)
+        }
+
+        let statuses = latestSnapshots.compactMapValues(\.officialStatus)
+        let allProbes = probesByProvider.values.flatMap { $0.probes }
+        divergenceText = VerdictEngine.divergence(
+            verdicts: verdicts, statuses: statuses, latestProbes: allProbes)
+        let troubled = Set(verdicts.values.filter {
+            [.degraded, .crawling, .limited].contains($0.state)
+        }.map(\.provider))
+
         var built: [ProviderSectionModel] = []
         for id in [ProviderID.claude, .codex] {
             guard let snapshot = latestSnapshots[id] else { continue }
@@ -113,13 +175,22 @@ final class AppModel: ObservableObject {
                     projections[name] = projection
                 }
             }
+            let bundle = probesByProvider[id] ?? ([], [])
+            let latestProbe = bundle.probes
+                .filter { $0.outcome == .ok }
+                .max { $0.timestamp < $1.timestamp }
             built.append(ProviderSectionModel(
                 snapshot: snapshot, projections: projections, now: now,
-                settings: settings, pollInterval: pollInterval))
+                settings: settings, pollInterval: pollInterval,
+                verdict: verdicts[id],
+                latestProbe: latestProbe,
+                recentSamples: bundle.probes,
+                divergenceText: troubled.contains(id) ? divergenceText : nil,
+                measuredToday: await prober.measuredCountToday(provider: id)))
         }
         sections = built
         status = StatusItemModel.title(
-            for: latestSnapshots, pollInterval: pollInterval, now: now)
+            for: latestSnapshots, pollInterval: pollInterval, now: now, verdicts: verdicts)
     }
 }
 
@@ -140,7 +211,7 @@ struct SemaforApp: App {
         Window("Semafor Settings", id: "settings") {
             SettingsView(model: model)
         }
-        .defaultSize(width: 380, height: 360)
+        .defaultSize(width: 380, height: 420)
     }
 
     static func color(for status: StatusItemModel.StatusColor) -> Color {
