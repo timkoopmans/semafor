@@ -1,0 +1,20 @@
+{"type":"system","subtype":"init","timestamp":"2026-10-20T03:00:00.000Z","cwd":"/tmp/scrubbed","version":"2.1.304"}
+not json at all {{{
+{"type":"api-request","id":"req-health","timestamp":"2026-10-20T03:00:00.000Z","querySource":"repl_main_thread","params":{"model":"claude-opus-5-5","max_tokens":32000},"sessionId":"s-1"}
+{"type":"assistant","requestRef":"req-health","requestId":"req_srv_1","requestedModel":"claude-opus-5-5","timestamp":"2026-10-20T03:00:02.000Z","message":{"model":"claude-opus-5-5","role":"assistant","content":[],"usage":{"input_tokens":1000,"output_tokens":50,"cache_read_input_tokens":800}}}
+{"type":"assistant","requestRef":"req-health","requestId":"req_srv_1","requestedModel":"claude-opus-5-5","timestamp":"2026-10-20T03:00:04.000Z","message":{"model":"claude-opus-5-5","role":"assistant","content":[],"usage":{"input_tokens":1000,"output_tokens":150,"cache_read_input_tokens":800}}}
+{"type":"api-request","id":"req-crawl","timestamp":"2026-10-20T03:10:00.000Z","querySource":"repl_main_thread","params":{"model":"claude-opus-5-5","max_tokens":32000},"sessionId":"s-1"}
+{"type":"assistant","requestRef":"req-crawl","requestId":"req_srv_2","timestamp":"2026-10-20T03:10:18.000Z","message":{"model":"claude-opus-5-5","role":"assistant","content":[],"usage":{"input_tokens":2000,"output_tokens":42}}}
+{"type":"assistant","requestRef":"req-crawl","requestId":"req_srv_2","timestamp":"2026-10-20T03:10:25.000Z","message":{"model":"claude-opus-5-5","role":"assistant","content":[],"usage":{"input_tokens":2000,"output_tokens":42}}}
+{"type":"user","timestamp":"2026-10-20T03:19:59.000Z","message":{"role":"user","content":[]}}
+{"type":"api-request","id":"req-dead","timestamp":"2026-10-20T03:20:00.000Z","querySource":"repl_main_thread","params":{"model":"claude-opus-5-5","max_tokens":32000},"sessionId":"s-1"}
+{"type":"api-request","id":"req-after-dead","timestamp":"2026-10-20T03:21:00.000Z","querySource":"repl_main_thread","params":{"model":"claude-opus-5-5","max_tokens":32000},"sessionId":"s-1"}
+{"type":"assistant","requestRef":"req-after-dead","requestId":"req_srv_3","requestedModel":"claude-opus-5-5","timestamp":"2026-10-20T03:21:01.000Z","message":{"model":"claude-opus-5-5","role":"assistant","content":[],"usage":{"input_tokens":300,"output_tokens":120}}}
+{"type":"api-request","id":"req-summary","timestamp":"2026-10-20T03:22:00.000Z","querySource":"summarizer","params":{"model":"claude-haiku-5-5","max_tokens":100},"sessionId":"s-1"}
+{"type":"assistant","requestRef":"req-summary","requestId":"req_srv_4","requestedModel":"claude-haiku-5-5","timestamp":"2026-10-20T03:22:01.000Z","message":{"model":"claude-haiku-5-5","role":"assistant","content":[],"usage":{"input_tokens":50,"output_tokens":20}}}
+{"type":"api-request","id":"req-tiny","timestamp":"2026-10-20T03:30:00.000Z","querySource":"repl_main_thread","params":{"model":"claude-opus-5-5","max_tokens":16},"sessionId":"s-1"}
+{"type":"assistant","requestRef":"req-tiny","requestId":"req_srv_5","requestedModel":"claude-opus-5-5","timestamp":"2026-10-20T03:30:01.000Z","message":{"model":"claude-opus-5-5","role":"assistant","content":[],"usage":{"input_tokens":80,"output_tokens":4}}}
+{"type":"assistant","requestRef":"req-tiny","requestId":"req_srv_5","requestedModel":"claude-opus-5-5","timestamp":"2026-10-20T03:30:01.200Z","message":{"model":"claude-opus-5-5","role":"assistant","content":[],"usage":{"input_tokens":80,"output_tokens":4}}}
+{"type":"api-request","id":"req-orphan","timestamp":"2026-10-20T03:40:00.000Z","querySource":"repl_main_thread","params":{"model":"claude-opus-5-5","max_tokens":32000},"sessionId":"s-1"}
+{"type":"api-request","id":"req-future","timestamp":"2027-10-20T03:00:00.000Z","querySource":"repl_main_thread","params":{"model":"claude-opus-5-5","max_tokens":32000},"sessionId":"s-1"}
+{"type":"assistant","requestRef":"req-future","requestId":"req_srv_6","requestedModel":"claude-opus-5-5","timestamp":"2027-10-20T03:00:01.000Z","message":{"model":"claude-opus-5-5","role":"assistant","content":[],"usage":{"input_tokens":10,"output_tokens":60}}}
