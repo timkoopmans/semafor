@@ -1,36 +1,62 @@
 # Semafor
 
-A native macOS menu bar app that shows whether your subscription frontier
-models (Claude via Claude Code, GPT-6 Astra via ChatGPT/Codex) are
-rate-limited, degrading, or about to run dry — measured, not as advertised.
+A macOS menu bar app that tells you what your frontier model subscriptions
+are actually doing, as opposed to what their status pages say.
 
-Menu bar shows the worst window utilization across providers (tinted by the
-worst verdict); the popover carries per-provider usage windows with reset
-countdowns, a burn-rate headline ("at this pace, gone ~Thu 14:00 (±3h)"),
-a verdict chip ("Crawling · Opus 5.5 · TTFT 21.4 s · 9 tok/s") with
-self-normalising sparklines, and a banner when the official status pages say
-green while your measured calls say otherwise.
+Status dashboards for frontier models are useless for this. They go red only
+when a whole region is down. They don't know you're at 94% of a 5-hour
+window, that your usually-fast session is crawling at 9 tok/s, or that
+you're two prompts from a rate limit. Semafor shows all of it, from your own
+traffic, in the corner of the screen.
 
-Latency and throughput are measured **passively** from the session logs
-Claude Code and Codex already write (`~/.claude/projects`,
-`~/.codex/sessions`) while you work — no extra model calls, no quota spent.
+## What you get
 
-Reads the OAuth credentials your CLIs already keep on this machine (macOS
-Keychain for Claude Code, `~/.codex/auth.json` for Codex) and talks only to
-each provider's usage endpoint, its official status page, and two public
-robots.txt URLs for the network control probe. Nothing is uploaded anywhere.
+- Menu bar glyph tinted by the worst state across providers. Popover with
+  per-provider usage windows, reset countdowns, and a burn-rate headline:
+  "at this pace, gone ~Thu 02:40 (±284h)".
+- Verdicts (OK, Busy, Limited, Degraded, Crawling, Unknown) learned from
+  your own history: baselines segmented by provider, model, weekday and time
+  band, z-scored against their MAD. The "usual" next to every number is
+  yours, not a hard-coded threshold.
+- Tiles for measured time-to-first-token and tokens/sec, each stamped with
+  how old that measurement is. 7-day bars for tokens/day.
+- A banner when the official status page says all clear and your own calls
+  say otherwise.
+- Your local Qwen box (vLLM, driven by OpenCode): health probe, passive
+  throughput samples, and recent 429/5xx errors surfaced where you'll see
+  them.
 
-Status: M1+M2+M3 shipped as 0.2.2 (`CHANGELOG.md`). M4 (capacity-event
-notifications, launch polish) gets its own plan. Design:
-`docs/superpowers/specs/`, plans: `docs/superpowers/plans/`.
+## How it measures
 
-## Build
+Passive. Claude Code, Codex and OpenCode already write session logs and a
+session database as you work. Semafor reads them and derives latency,
+throughput and token counts. No extra model calls, no quota spent. Usage
+windows come from each provider's own usage endpoint using the credentials
+their CLI already keeps on this machine (Keychain for Claude, `auth.json`
+for Codex). The only thing that leaves the machine is the provider endpoint
+call itself, plus two public robots.txt fetches that tell apart "their
+server is slow" from "your network is slow".
+
+## Privacy
+
+Everything stays on your Mac. Credentials are read to call the provider
+endpoints and are never stored or logged. Conversation text in the session
+logs is parsed for numeric fields and discarded. No telemetry, no accounts,
+no server component.
+
+## Stack
+
+Swift 6, SwiftUI `MenuBarExtra`, zero third-party dependencies (Apple system
+libs only), macOS 14+. Swift Testing for the suite.
 
 ```sh
-just build       # swift build
-just test        # swift test
-just dev         # test-bundle .app in dist/
-just run         # build test bundle and launch it
-just deploy      # release .app → ~/Applications
-just live-scan claude 7   # passive extractor shape-check vs real logs
+just build    # swift build
+just test     # swift test
+just package  # universal .app + DMG into dist/
 ```
+
+## Status
+
+0.2.x, in daily use. The `main` branch is the stable line; `feat/*` carries
+current work. Design docs live in `docs/superpowers/specs/`, implementation
+plans in `docs/superpowers/plans/`.
