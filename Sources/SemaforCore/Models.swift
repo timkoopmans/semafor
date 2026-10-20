@@ -194,6 +194,7 @@ public struct ProbeSample: Codable, Equatable, Sendable {
         try container.encodeIfPresent(ttft, forKey: .ttft)
         try container.encodeIfPresent(duration, forKey: .duration)
         try container.encodeIfPresent(tokensPerSecond, forKey: .tokensPerSecond)
+        try container.encodeIfPresent(tokens, forKey: .tokens)
         try container.encode(outcome, forKey: .outcome)
         try container.encode(StoreDateCoding.render(timestamp), forKey: .timestamp)
     }

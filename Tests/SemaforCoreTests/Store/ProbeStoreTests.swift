@@ -38,13 +38,14 @@ struct ProbeStoreTests {
         ttft: TimeInterval? = 2.0,
         duration: TimeInterval? = 4.0,
         tokensPerSecond: Double? = 80,
+        tokens: Int? = nil,
         outcome: ProbeOutcome = .ok,
         timestamp: Date
     ) -> ProbeSample {
         ProbeSample(
             provider: provider, model: model, sessionKey: sessionKey,
             ttft: ttft, duration: duration, tokensPerSecond: tokensPerSecond,
-            outcome: outcome, timestamp: timestamp)
+            tokens: tokens, outcome: outcome, timestamp: timestamp)
     }
 
     @Test func probeSampleRoundTripsAllFields() async throws {
@@ -52,9 +53,14 @@ struct ProbeStoreTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let expected = sample(
             provider: .codex, model: "gpt-6-astra", sessionKey: "rollout-1#turn-9",
-            ttft: 1.75, duration: 9.5, tokensPerSecond: 41.25,
+            ttft: 1.75, duration: 9.5, tokensPerSecond: 41.25, tokens: 312,
             timestamp: iso("2025-10-19T06:30:00Z"))
         try await store.append(.probe(expected))
+        // Raw JSON check too: ProbeSample's encode is hand-rolled, so a field
+        // present in decode but missing in encode must not slip through.
+        let url = dir.appendingPathComponent("probes-2025-10-19.jsonl")
+        let raw = try String(contentsOf: url, encoding: .utf8)
+        #expect(raw.contains(#""tokens":312"#))
         let got = await store.probeSamples(provider: .codex, since: .distantPast)
         #expect(got == [expected])
     }
