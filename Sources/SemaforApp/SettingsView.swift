@@ -3,7 +3,7 @@ import SwiftUI
 
 import SemaforCore
 
-/// Poll policy, passive-measurement policy, and data reset.
+/// Poll policy, passive-measurement policy, local Qwen (hal), and data reset.
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     @State private var pollIntervalMinutes: Int
@@ -14,6 +14,10 @@ struct SettingsView: View {
     @State private var zWarn: Double
     @State private var zCrawl: Double
     @State private var consecutiveProbeN: Int
+    @State private var halEnabled: Bool
+    @State private var halBaseURL: String
+    @State private var halModelName: String
+    @State private var halDbPath: String
     @State private var launchAtLogin: Bool
     @State private var confirmingReset = false
 
@@ -27,6 +31,10 @@ struct SettingsView: View {
         _zWarn = State(initialValue: model.settings.zWarn)
         _zCrawl = State(initialValue: model.settings.zCrawl)
         _consecutiveProbeN = State(initialValue: model.settings.consecutiveProbeN)
+        _halEnabled = State(initialValue: model.settings.halEnabled)
+        _halBaseURL = State(initialValue: model.settings.halBaseURL)
+        _halModelName = State(initialValue: model.settings.halModelName)
+        _halDbPath = State(initialValue: model.settings.halDbPath)
         _launchAtLogin = State(initialValue: model.settings.launchAtLogin)
     }
 
@@ -67,6 +75,22 @@ struct SettingsView: View {
                     .onChange(of: controlProbeEnabled) { _, enabled in
                         model.settings.controlProbeEnabled = enabled
                     }
+            }
+
+            Section("Local Qwen (hal)") {
+                Toggle("Enabled", isOn: $halEnabled)
+                    .onChange(of: halEnabled) { _, enabled in
+                        model.settings.halEnabled = enabled
+                    }
+                textField("Base URL", value: $halBaseURL) {
+                    model.settings.halBaseURL = $0
+                }
+                textField("Model name", value: $halModelName) {
+                    model.settings.halModelName = $0
+                }
+                textField("OpenCode db path", value: $halDbPath) {
+                    model.settings.halDbPath = $0
+                }
             }
 
             Toggle("Launch at login", isOn: $launchAtLogin)
@@ -128,6 +152,22 @@ struct SettingsView: View {
                 .frame(width: 64)
                 .onChange(of: value.wrappedValue) { _, clamped in
                     store(min(max(clamped, clamp.lowerBound), clamp.upperBound))
+                }
+        }
+    }
+
+    private func textField(
+        _ title: String, value: Binding<String>, store: @escaping (String) -> Void
+    ) -> some View {
+        // Same LabeledContent pattern as numberField: a plain TextField(title)
+        // lets the label column collapse in the grouped form.
+        LabeledContent(title) {
+            TextField("", text: value)
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 160)
+                .onChange(of: value.wrappedValue) { _, text in
+                    store(text)
                 }
         }
     }

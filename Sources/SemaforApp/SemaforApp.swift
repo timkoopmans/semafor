@@ -23,6 +23,8 @@ final class AppModel: ObservableObject {
     let store: SampleStore
     private let scheduler: PollScheduler
     private let prober: PassiveProber
+    private let halProvider: HalProvider
+    private let halScanner: HalScanner
     private var latestSnapshots: [ProviderID: ProviderSnapshot] = [:]
     private var started = false
 
@@ -37,9 +39,19 @@ final class AppModel: ObservableObject {
             ClaudeProvider(http: http, credentials: ClaudeKeychainReader(), settings: settings),
             CodexProvider(http: http, auth: CodexFileReader(), settings: settings),
         ]
+        let hal = HalProvider(http: http, settings: settings)
         self.settings = settings
         self.store = store
-        self.scheduler = PollScheduler(providers: providers, writer: store, settings: settings)
+        self.halProvider = hal
+        self.scheduler = PollScheduler(
+            providers: providers + [hal], writer: store, settings: settings)
+        self.halScanner = HalScanner(
+            dbPath: settings.halDbPath.isEmpty
+                ? NSHomeDirectory() + "/.local/share/opencode/opencode.db"
+                : settings.halDbPath,
+            settings: settings,
+            store: store,
+            stateURL: directory.appendingPathComponent("opencode-scan-state.json"))
 
         let tailer = SessionLogTailer(
             stateURL: directory.appendingPathComponent("tailer-state.json"))
@@ -91,12 +103,19 @@ final class AppModel: ObservableObject {
         started = true
         Task { await scheduler.start() }
         Task { await prober.start() }  // backfills, then scans the CLI logs
+        // Always started; the scanner itself skips ticks while hal is off, so
+        // enabling it in Settings takes effect on the next tick (spec §5).
+        Task { await halScanner.start() }
     }
 
     func refreshAll() {
         Task {
             await scheduler.refresh(.claude)
             await scheduler.refresh(.codex)
+            if settings.halEnabled {
+                await scheduler.refresh(.hal)
+                _ = try? await halScanner.scanOnce(now: Date())
+            }
             await prober.scanNow()
             await applyLatest()
         }
@@ -118,8 +137,15 @@ final class AppModel: ObservableObject {
         await applyLatest()
     }
 
+    /// Providers the popover polls and renders; hal rides the same loops only
+    /// while its setting is on (spec §5 hides the section otherwise).
+    private var enabledProviderIDs: [ProviderID] {
+        [.claude, .codex] + (settings.halEnabled ? [.hal] : [])
+    }
+
     private func applyLatest() async {
         let now = Date()
+        let calendar = Calendar.current
         let pollInterval = TimeInterval(settings.pollIntervalMinutes * 60)
         let since = now.addingTimeInterval(-24 * 3600)
         let probeSince = now.addingTimeInterval(-30 * 24 * 3600)  // store window for verdicts/sparklines
@@ -129,7 +155,7 @@ final class AppModel: ObservableObject {
         var verdicts: [ProviderID: Verdict] = [:]
         var probesByProvider: [ProviderID: (probes: [ProbeSample], controls: [ControlSample])] = [:]
         let allControls = await store.controlSamples(since: probeSince)  // one read for all providers
-        for id in [ProviderID.claude, .codex] {
+        for id in enabledProviderIDs {
             guard let snapshot = latestSnapshots[id] else { continue }
             let probes = await store.probeSamples(provider: id, since: probeSince)
             probesByProvider[id] = (probes, allControls)
@@ -160,7 +186,7 @@ final class AppModel: ObservableObject {
         }.map(\.provider))
 
         var built: [ProviderSectionModel] = []
-        for id in [ProviderID.claude, .codex] {
+        for id in enabledProviderIDs {
             guard let snapshot = latestSnapshots[id] else { continue }
             var projections: [WindowName: BurnRateEstimator.Projection] = [:]
             // One store read per provider per rebuild, not per window.
@@ -180,6 +206,28 @@ final class AppModel: ObservableObject {
             let latestProbe = bundle.probes
                 .filter { $0.outcome == .ok }
                 .max { $0.timestamp < $1.timestamp }
+            // hal-only copy (spec §3.2/§3.3); the prober never measures hal,
+            // so "measured today" counts its scanned samples instead.
+            var servingText: String?
+            var errorLineText: String?
+            var errorLineIsAmber = false
+            let measuredToday: Int
+            if id == .hal {
+                servingText = ProviderSectionModel.servingText(
+                    served: await halProvider.servedModel(),
+                    expectedModel: settings.halModelName)
+                let errors = await halScanner.recentErrors(now: now, window: 86_400)
+                if let line = ProviderSectionModel.halErrorLine(
+                    records: errors, now: now, calendar: calendar) {
+                    errorLineText = line.text
+                    errorLineIsAmber = line.amber
+                }
+                measuredToday = bundle.probes.filter {
+                    $0.outcome == .ok && calendar.isDate($0.timestamp, inSameDayAs: now)
+                }.count
+            } else {
+                measuredToday = await prober.measuredCountToday(provider: id)
+            }
             built.append(ProviderSectionModel(
                 snapshot: snapshot, projections: projections, now: now,
                 settings: settings, pollInterval: pollInterval,
@@ -187,7 +235,10 @@ final class AppModel: ObservableObject {
                 latestProbe: latestProbe,
                 recentSamples: bundle.probes,
                 divergenceText: troubled.contains(id) ? divergenceText : nil,
-                measuredToday: await prober.measuredCountToday(provider: id)))
+                measuredToday: measuredToday,
+                servingText: servingText,
+                errorLineText: errorLineText,
+                errorLineIsAmber: errorLineIsAmber))
         }
         sections = built
         status = StatusItemModel.title(

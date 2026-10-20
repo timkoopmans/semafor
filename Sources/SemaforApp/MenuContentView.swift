@@ -54,6 +54,11 @@ struct MenuContentView: View {
                         .foregroundStyle(SemaforApp.color(for: section.chipColor))
                 }
             }
+            if let serving = section.servingText {
+                Text(serving)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
             HStack(spacing: 10) {
                 if let tile = section.tileTTFT {
                     MetricTileView(tile: tile, caption: "ttft")
@@ -78,6 +83,12 @@ struct MenuContentView: View {
                             .foregroundStyle(.tertiary)
                     }
                 }
+            }
+            if let errors = section.errorLineText {
+                Text(errors)
+                    .font(.caption2)
+                    .foregroundStyle(
+                        section.errorLineIsAmber ? AnyShapeStyle(.orange) : AnyShapeStyle(.tertiary))
             }
             if let headline = section.headline {
                 Text(headline)

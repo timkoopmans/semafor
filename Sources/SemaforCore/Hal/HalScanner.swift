@@ -110,8 +110,12 @@ public actor HalScanner {
         loopTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
-                do { _ = try await self.scanOnce(now: Date()) } catch { }
-                try? await Task.sleep(for: .seconds(max(1, await self.settings.scanIntervalSeconds)))
+                // Live gate (spec §5): keep ticking while hal is off so enabling
+                // it in Settings picks up scans on the next tick, no restart.
+                if self.settings.halEnabled {
+                    do { _ = try await self.scanOnce(now: Date()) } catch { }
+                }
+                try? await Task.sleep(for: .seconds(max(1, self.settings.scanIntervalSeconds)))
             }
         }
     }

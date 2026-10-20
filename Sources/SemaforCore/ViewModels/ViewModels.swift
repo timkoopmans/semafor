@@ -73,6 +73,12 @@ public struct ProviderSectionModel: Equatable, Sendable {
     public let tokenCaption: String?
     public let measuredText: String?
     public let divergenceText: String?
+    /// hal-only "serving X" line (spec §3.2), composed via
+    /// `servingText(served:expectedModel:)`; nil hides the row elsewhere.
+    public let servingText: String?
+    /// hal-only "errors today: …" line (spec §3.3); nil when none in 24 h.
+    public let errorLineText: String?
+    public let errorLineIsAmber: Bool
 
     public init(
         snapshot: ProviderSnapshot,
@@ -84,8 +90,14 @@ public struct ProviderSectionModel: Equatable, Sendable {
         latestProbe: ProbeSample? = nil,
         recentSamples: [ProbeSample] = [],
         divergenceText: String? = nil,
-        measuredToday: Int = 0
+        measuredToday: Int = 0,
+        servingText: String? = nil,
+        errorLineText: String? = nil,
+        errorLineIsAmber: Bool = false
     ) {
+        self.servingText = servingText
+        self.errorLineText = errorLineText
+        self.errorLineIsAmber = errorLineIsAmber
         providerID = snapshot.providerID
         displayName = snapshot.providerID.displayName
         glyph = snapshot.providerID.menuGlyph
@@ -279,6 +291,38 @@ public struct ProviderSectionModel: Equatable, Sendable {
         if seconds < 60 { return "just now" }
         if seconds < 3600 { return "\(Int(seconds) / 60)m ago" }
         return "\(Int(seconds) / 3600)h ago"
+    }
+
+    /// hal serving line (spec §3.2 + swap warning): the vLLM box serves one
+    /// model at a time, so any pick but the configured one is flagged.
+    public static func servingText(served: String?, expectedModel: String) -> String {
+        guard let served else { return "serving unknown" }
+        guard served != expectedModel else { return "serving \(served)" }
+        return "serving \(served) · not \(expectedModel) ⚠"
+    }
+
+    /// hal error line (spec §3.3): grouped counts of the last 24 h's scanned
+    /// API errors, busiest code first ("2× 429 · 1× 500"), plus the newest
+    /// record's age from the shared humanizer. nil when the window is empty;
+    /// amber on rate-limit/overload/server codes, grey on request-shape 4xx.
+    public static func halErrorLine(
+        records: [HalErrorRecord], now: Date, calendar: Calendar
+    ) -> (text: String, amber: Bool)? {
+        let cutoff = calendar.date(byAdding: .day, value: -1, to: now)
+            ?? now.addingTimeInterval(-86_400)
+        let window = records.filter { $0.at >= cutoff }
+        guard !window.isEmpty else { return nil }
+        var counts: [Int: Int] = [:]
+        for record in window { counts[record.code, default: 0] += 1 }
+        let groups = counts
+            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key > $1.key }
+            .map { "\($0.value)× \($0.key)" }
+        let newest = window.max { $0.at < $1.at }!  // non-empty window
+        let amberCodes: Set<Int> = [429, 500, 502, 503, 504, 529]
+        let amber = window.contains { amberCodes.contains($0.code) }
+        let text = "errors today: \(groups.joined(separator: " · "))"
+            + " · last \(measurementAge(newest.at, now: now))"
+        return (text: text, amber: amber)
     }
 
     /// Per-model, ÷ the current segment's learned median so a provider that

@@ -244,6 +244,64 @@ struct ViewModelsVerdictsTests {
         #expect(section(divergenceText: "Status pages: ✅").divergenceText == "Status pages: ✅")
     }
 
+    // MARK: - hal serving line and error line (spec §3.2/§3.3)
+
+    @Test func swapWarningComposedInServingText() {
+        // vLLM serves one model at a time; anything but the configured pick
+        // gets flagged (spec §3.2 swap warning).
+        #expect(ProviderSectionModel.servingText(served: nil, expectedModel: "Qwen3.8-Flash-Next")
+                == "serving unknown")
+        #expect(ProviderSectionModel.servingText(
+            served: "Qwen3.8-Flash-Next", expectedModel: "Qwen3.8-Flash-Next")
+            == "serving Qwen3.8-Flash-Next")
+        #expect(ProviderSectionModel.servingText(
+            served: "qwen3.8-27b", expectedModel: "Qwen3.8-Flash-Next")
+            == "serving qwen3.8-27b · not Qwen3.8-Flash-Next ⚠")
+
+        // Construction passes the new fields through…
+        let hal = ProviderSectionModel(
+            snapshot: ProviderSnapshot(providerID: .hal, windows: [], fetchedAt: now, lastError: nil),
+            projections: [:], now: now, settings: settings(), pollInterval: 300,
+            servingText: "serving qwen3.8-27b · not Qwen3.8-Flash-Next ⚠",
+            errorLineText: "errors today: 1× 429 · last 12m ago", errorLineIsAmber: true)
+        #expect(hal.servingText == "serving qwen3.8-27b · not Qwen3.8-Flash-Next ⚠")
+        #expect(hal.errorLineText == "errors today: 1× 429 · last 12m ago")
+        #expect(hal.errorLineIsAmber)
+        // …and the defaults keep Claude/Codex sections unchanged.
+        let plain = section()
+        #expect(plain.servingText == nil)
+        #expect(plain.errorLineText == nil)
+        #expect(!plain.errorLineIsAmber)
+    }
+
+    @Test func halErrorLineFormatsGroupsAndAmbers() {
+        let cal = Calendar.current
+        // Two 429 + one 500 inside the last hour ⇒ count-descending groups
+        // joined " · ", then the newest record's relative age (the same
+        // humanizer backing the tile ageText).
+        let busy = ProviderSectionModel.halErrorLine(
+            records: [
+                HalErrorRecord(code: 429, at: now.addingTimeInterval(-780)),
+                HalErrorRecord(code: 429, at: now.addingTimeInterval(-720)),
+                HalErrorRecord(code: 500, at: now.addingTimeInterval(-1_800)),
+            ],
+            now: now, calendar: cal)
+        #expect(busy?.text == "errors today: 2× 429 · 1× 500 · last 12m ago")
+        #expect(busy?.amber == true)
+
+        // A request-shape 400 is surfaced but never alarming (spec §3.3).
+        let benign = ProviderSectionModel.halErrorLine(
+            records: [HalErrorRecord(code: 400, at: now.addingTimeInterval(-600))],
+            now: now, calendar: cal)
+        #expect(benign?.text == "errors today: 1× 400 · last 10m ago")
+        #expect(benign?.amber == false)
+
+        #expect(ProviderSectionModel.halErrorLine(records: [], now: now, calendar: cal) == nil)
+        #expect(ProviderSectionModel.halErrorLine(
+            records: [HalErrorRecord(code: 503, at: now.addingTimeInterval(-25 * 3_600))],
+            now: now, calendar: cal) == nil)  // outside the 24 h window
+    }
+
     // MARK: - Menu-bar colour ladder
 
     @Test func verdictsExtendTheStatusLadder() {
