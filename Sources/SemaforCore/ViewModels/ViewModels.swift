@@ -10,15 +10,19 @@ public struct MetricTileModel: Equatable, Sendable {
     /// Series normalized (÷ each sample's model median), clamped to 0…2.
     public let series: [Double]
     public let color: StatusItemModel.StatusColor
+    /// Age of the measurement behind `valueText` ("1m ago", "5h ago"), so a
+    /// stale-but-green tile can't be mistaken for a live reading.
+    public let ageText: String?
 
     public init(
         valueText: String, usualText: String, series: [Double],
-        color: StatusItemModel.StatusColor
+        color: StatusItemModel.StatusColor, ageText: String? = nil
     ) {
         self.valueText = valueText
         self.usualText = usualText
         self.series = series
         self.color = color
+        self.ageText = ageText
     }
 }
 
@@ -264,7 +268,17 @@ public struct ProviderSectionModel: Equatable, Sendable {
             usualText = "usual " + Self.rateNumber(median)
         }
         return MetricTileModel(
-            valueText: valueText, usualText: usualText, series: series, color: color)
+            valueText: valueText, usualText: usualText, series: series, color: color,
+            ageText: Self.measurementAge(newest.timestamp, now: now))
+    }
+
+    /// "just now" / "N m ago" / "N h ago" — tiles draw the newest measurement
+    /// from a 24 h window, so the age says how live that number really is.
+    static func measurementAge(_ timestamp: Date, now: Date) -> String {
+        let seconds = max(0, now.timeIntervalSince(timestamp))
+        if seconds < 60 { return "just now" }
+        if seconds < 3600 { return "\(Int(seconds) / 60)m ago" }
+        return "\(Int(seconds) / 3600)h ago"
     }
 
     /// Per-model, ÷ the current segment's learned median so a provider that

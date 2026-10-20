@@ -56,7 +56,7 @@ struct MetricTileView: View {
             }
             .tint(.secondary)
             .frame(width: 60, height: 18)
-            Text(caption)
+            Text(tile.ageText.map { "\(caption) · \($0)" } ?? caption)
                 .font(.system(size: 8))
                 .foregroundStyle(.tertiary)
         }

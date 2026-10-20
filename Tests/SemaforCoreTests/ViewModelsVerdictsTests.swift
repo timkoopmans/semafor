@@ -95,6 +95,18 @@ struct ViewModelsVerdictsTests {
         #expect(model.tileTTFT?.usualText == "usual 2.0 s")
     }
 
+    @Test func tileAgeTextReflectsSampleFreshness() {
+        // "24 tok/s" from a 5-minute-old measurement reads differently than
+        // one from 4 hours ago; every tile carries its measurement's age.
+        let fresh = section(recent: learnedSeries(latestTok: 80))
+        #expect(fresh.tileTokPerSec?.ageText == "1m ago")  // helper's newest sits at offset −60 s
+        let stale = section(recent: (0..<21).map { sample(offset: -3 * 86_400 - Double($0) * 600) }
+            + [sample(offset: -5 * 3600, ttft: 2.0, tokPerSec: 80)])
+        #expect(stale.tileTokPerSec?.ageText == "5h ago")
+        #expect(ProviderSectionModel.measurementAge(now.addingTimeInterval(-5), now: now) == "just now")
+        #expect(ProviderSectionModel.measurementAge(now.addingTimeInterval(-270), now: now) == "4m ago")
+    }
+
     @Test func tileUsualSurvivesProviderBeingIdleOverDay() {
         // Codex dogfood bug: baseline pool was 24 h only, so a provider idle
         // most of the day silently fell back to the settings defaults and the
