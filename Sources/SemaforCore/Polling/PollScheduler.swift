@@ -51,9 +51,10 @@ public actor PollScheduler {
     }
 
     /// Manual refresh; calls while a poll is in flight coalesce into one
-    /// follow-up poll.
+    /// follow-up poll. Disabled providers (hal off, say) are skipped
+    /// entirely — their existing snapshot simply stays put.
     public func refresh(_ id: ProviderID) async {
-        guard let provider = providersById[id] else { return }
+        guard let provider = providersById[id], provider.pollingEnabled else { return }
         if inFlight.contains(id) {
             pendingRefresh.insert(id)
             return

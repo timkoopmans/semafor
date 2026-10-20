@@ -11,16 +11,23 @@ private actor ScriptedProvider: Provider {
     }
 
     let id: ProviderID
+    nonisolated let pollingEnabled: Bool
     private var steps: [Step]
     private let fallback: Step
     private var gateContinuation: CheckedContinuation<Void, Never>?
 
     private(set) var callCount = 0
 
-    init(id: ProviderID, steps: [Step], fallback: Step = .failure(.network)) {
+    init(
+        id: ProviderID,
+        steps: [Step],
+        fallback: Step = .failure(.network),
+        pollingEnabled: Bool = true
+    ) {
         self.id = id
         self.steps = steps
         self.fallback = fallback
+        self.pollingEnabled = pollingEnabled
     }
 
     func fetchLimits() async throws -> [UsageWindow] {
@@ -206,6 +213,22 @@ struct PollSchedulerTests {
         let stream = scheduler.updates()
         let latest = await stream.first()
         #expect(latest?[.claude]?.windows.count == 1)
+    }
+
+    @Test func disabledStopsSchedulerPolling() async throws {
+        let clock = ManualClock()
+        let hal = ScriptedProvider(id: .hal, steps: [], fallback: .success([]), pollingEnabled: false)
+        let claude = ScriptedProvider(id: .claude, steps: [], fallback: .success([window(.fiveHour, 10)]))
+        let scheduler = PollScheduler(providers: [hal, claude], writer: nil, settings: makeSettings(), clock: clock)
+
+        await scheduler.start()
+        try await waitUntil("first claude poll") { await claude.callCount == 1 }
+        clock.advanceMinutes(12)  // well past the jittered 5-min interval
+        try await waitUntil("claude still polling") { await claude.callCount == 2 }
+        #expect(await hal.callCount == 0)  // disabled provider skipped on ticks
+
+        await scheduler.refresh(.hal)  // manual refresh gated too
+        #expect(await hal.callCount == 0)
     }
 }
 

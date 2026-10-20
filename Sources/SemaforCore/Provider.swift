@@ -8,4 +8,12 @@ public protocol Provider: Sendable {
     func fetchLimits() async throws -> [UsageWindow]
     func statusPage() async throws -> StatusPageState
     var sessionLogPaths: [URL] { get }
+    /// When false, `PollScheduler` skips this provider entirely (periodic
+    /// ticks and manual refresh alike); existing snapshots stay in place.
+    var pollingEnabled: Bool { get }
+}
+
+extension Provider {
+    /// Providers without a user-facing on/off switch always poll.
+    public var pollingEnabled: Bool { true }
 }
