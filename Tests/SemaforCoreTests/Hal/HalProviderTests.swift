@@ -145,15 +145,17 @@ struct HalProviderTests {
     }
 
     @Test func malformedBaseUrlMapsToNetwork() async throws {
-        // Modern Foundation percent-encodes the spaces, so this may reach the
-        // client; either path (URL guard nil, or client transport failure)
-        // must surface as .network, and the stub with zero steps guarantees it.
-        let (client, _) = scriptedClient([])
-        let provider = HalProvider(http: client, settings: makeSettings(baseURL: "not a url at all"))
+        // "not a url at all" would survive modern Foundation's percent-encoding
+        // of spaces; the newline is a control character URL(string:) rejects,
+        // so this exercises the guard branch — the zero-step stub proves the
+        // throw happened before any network attempt.
+        let (client, box) = scriptedClient([])
+        let provider = HalProvider(http: client, settings: makeSettings(baseURL: "http://bad\nhost"))
 
         await #expect(throws: ProviderError.network) {
             _ = try await provider.fetchLimits()
         }
+        #expect(box.recorded.isEmpty)  // guard threw pre-network, not transport
         #expect(await provider.servedModel() == nil)  // a rejected base URL records no pick
     }
 }
