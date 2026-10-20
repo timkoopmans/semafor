@@ -143,4 +143,17 @@ struct HalProviderTests {
         }
         #expect(await provider.servedModel() == nil)  // failed fetch records nothing
     }
+
+    @Test func malformedBaseUrlMapsToNetwork() async throws {
+        // Modern Foundation percent-encodes the spaces, so this may reach the
+        // client; either path (URL guard nil, or client transport failure)
+        // must surface as .network, and the stub with zero steps guarantees it.
+        let (client, _) = scriptedClient([])
+        let provider = HalProvider(http: client, settings: makeSettings(baseURL: "not a url at all"))
+
+        await #expect(throws: ProviderError.network) {
+            _ = try await provider.fetchLimits()
+        }
+        #expect(await provider.servedModel() == nil)  // a rejected base URL records no pick
+    }
 }

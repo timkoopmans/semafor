@@ -29,7 +29,7 @@ dev-test:
 live-smoke provider="claude" *args:
     swift run SemaforSmoke {{provider}} {{args}}
 
-# Opt-in passive extractor shape-check against real session logs (Task 12)
+# Opt-in passive extractor shape-check against real session logs (claude/codex) or the OpenCode db (hal) (Task 12)
 live-scan provider="claude" days="7":
     swift run SemaforSmoke scan {{provider}} --days {{days}}
 

@@ -241,8 +241,12 @@ final class AppModel: ObservableObject {
                 errorLineIsAmber: errorLineIsAmber))
         }
         sections = built
+        // Only enabled providers feed the menu-bar title: the grey ladder
+        // darkens when ANY snapshot carries lastError, and a disabled hal's
+        // frozen failed snapshot would grey the bar with no section to show.
         status = StatusItemModel.title(
-            for: latestSnapshots, pollInterval: pollInterval, now: now, verdicts: verdicts)
+            for: latestSnapshots.filter { enabledProviderIDs.contains($0.key) },
+            pollInterval: pollInterval, now: now, verdicts: verdicts)
     }
 }
 

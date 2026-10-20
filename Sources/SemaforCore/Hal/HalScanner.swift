@@ -59,6 +59,7 @@ public actor HalScanner {
     private let stateURL: URL
     private var scanState: ScanState
     private var loopTask: Task<Void, Never>?
+    private var scanning = false
 
     public init(dbPath: String, settings: AppSettings, store: SampleStore, stateURL: URL) {
         self.dbPath = dbPath; self.settings = settings; self.store = store; self.stateURL = stateURL
@@ -73,6 +74,13 @@ public actor HalScanner {
     }
 
     public func scanOnce(now: Date) async throws -> Int {
+        // Reentrancy guard: the store.append below suspends, and a concurrent
+        // scan (loop tick racing manual refresh) would re-read the cursor and
+        // double-append error records, which have no dedupe key like samples.
+        // Check-and-set is atomic here because it precedes the first suspension.
+        if scanning { return 0 }
+        scanning = true
+        defer { scanning = false }
         let db = try OpenCodeDb(path: dbPath)
         let rows = try db.rows(after: scanState.cursor, limit: 1000)
         var count = 0

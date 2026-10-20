@@ -166,6 +166,29 @@ struct HalScannerTests {
         #expect(try await s2.scanOnce(now: Date()) == 0)
     }
 
+    @Test func concurrentScanOnceCannotDuplicateRecords() async throws {
+        // The first scan suspends at store.append after committing row 1's
+        // cursor; rows 2–4 are the window a concurrent second scan re-reads.
+        let dir = try halTemp(), db = try fixture(dir), t: Int64 = 1_760_000_000_000
+        try insert(#"{"role":"assistant","providerID":"hal","tokens":{"output":120},"time":{"created":\#(t),"completed":\#(t + 1000)}}"#, into: db)
+        try insert(#"{"role":"assistant","providerID":"hal","error":{"name":"APIError","data":{"statusCode":429}},"time":{"created":\#(t + 2000)}}"#, into: db)
+        try insert(#"{"role":"assistant","providerID":"hal","error":{"name":"APIError","data":{"statusCode":500}},"time":{"created":\#(t + 4000)}}"#, into: db)
+        try insert(#"{"role":"assistant","providerID":"hal","tokens":{"output":60},"time":{"created":\#(t + 6000),"completed":\#(t + 8000)}}"#, into: db)
+        let now = Date(timeIntervalSince1970: Double(t + 100_000) / 1000)
+        let s = HalScanner(dbPath: dir.appendingPathComponent("opencode.db").path, settings: AppSettings(), store: store(dir, now: now), stateURL: dir.appendingPathComponent("state"))
+        async let first = try s.scanOnce(now: now)
+        async let second = try s.scanOnce(now: now)
+        let total = try await first + second
+        // (b) both calls together count each completable row exactly once.
+        #expect(total == 2)
+        // (a) the overlap leaves no duplicated error records behind.
+        let state = await s.state()
+        #expect(state.recentErrors.count == 2)
+        #expect(Set(state.recentErrors.map(\.code)) == [429, 500])
+        // (c) the winning scan consumed the whole db.
+        #expect(state.cursor == 4)
+    }
+
     @Test func secondsMisreadRowsFailDurationGate() async throws {
         let dir = try halTemp(), db = try fixture(dir), t = 1_760_000_000_000
         try insert(#"{"role":"assistant","providerID":"hal","tokens":{"output":9},"time":{"created":\#(t),"completed":\#(t + 172_800_000)}}"#, into: db)

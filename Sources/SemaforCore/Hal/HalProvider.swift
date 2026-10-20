@@ -33,7 +33,8 @@ public final class HalProvider: Provider, @unchecked Sendable {
         guard let url = URL(string: "\(trimTrailingSlash(settings.halBaseURL))/models") else {
             throw ProviderError.network
         }
-        let dto = try await fetchJSON(HalModelsResponse.self, EndpointRequest(url: url), client: http)
+        // Spec §3.2 binds a 5 s health probe; EndpointRequest defaults to 20.
+        let dto = try await fetchJSON(HalModelsResponse.self, EndpointRequest(url: url, timeout: 5), client: http)
 
         // Exact configured-model match, else whatever the router serves
         // first, else nil; an empty catalogue is a success and records nil

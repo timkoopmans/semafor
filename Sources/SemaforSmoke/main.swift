@@ -103,7 +103,7 @@ func runLiveScan(arguments: [String]) async {
     case "claude", .none: providerID = .claude
     case "hal": providerID = .hal
     case let other?:
-        FileHandle.standardError.write(Data("unknown provider: \(other) (expected claude or codex)\n".utf8))
+        FileHandle.standardError.write(Data("unknown provider: \(other) (expected claude, codex or hal)\n".utf8))
         exit(2)
     }
     var days = 7
