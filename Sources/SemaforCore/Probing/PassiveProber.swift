@@ -69,6 +69,7 @@ public actor PassiveProber {
         for id in providersById.keys {
             await scanProvider(id, now: now, storeOnly: false)
         }
+        try? await tailer.saveState()
         await runControlGate(now: now)
     }
 
@@ -99,6 +100,7 @@ public actor PassiveProber {
             for id in providersById.keys {
                 await scanProvider(id, now: now, storeOnly: true)
             }
+            try? await tailer.saveState()
         }
         while started {
             if !paused {

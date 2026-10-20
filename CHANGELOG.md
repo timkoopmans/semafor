@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.2.0 — M3 (passive measurement + verdicts)
+
+**What's in**
+
+- Passive latency/throughput measurement: Semafor tails the session logs
+  Claude Code (`api-request` ↔ `assistant.requestRef` pairing) and Codex
+  (`task_started`/`task_complete` turns, burst-filtered `token_count`
+  deltas) already write, deriving per-call TTFT and tok/s while you work —
+  no extra model calls, no quota spent.
+- Launch backfill seeds 7 days of history into learned baselines; byte-
+  offset tailer resumes across restarts; `sessionKey` dedupe guards
+  re-reads.
+- Learned baselines: median/MAD per provider × model × weekend × 6-hour
+  bucket with MAD-floored z-scores; defaults until 20 samples/segment.
+- Verdict ladder per provider (OK/Busy/Degraded/Crawling/Limited/Unknown)
+  with shown reasons, freshness rule (probe rules only trust samples from
+  the last 30 min), flapping guard (N consecutive slow calls), and a
+  robots.txt control probe that blames your network (UNKNOWN) before
+  blaming the provider.
+- Status-page divergence banner: official feeds (status.claude.com /
+  status.openai.com, Statuspage) green while measured calls crawl ⇒
+  "Status pages: ✅ operational · ours: Codex Crawling (…)" — suppressed
+  whenever the control probe or their own page explains it.
+- Popover: verdict chip (state · model · TTFT · tok/s), two 60×18
+  self-normalising sparklines, "measured N calls today" caption; menu-bar
+  tint now follows verdicts (crawling/limited red > degraded/busy amber >
+  unknown grey > percent ladder).
+- Settings: scan interval, backfill days, sample recency, control-probe
+  toggle, warn/crawl z, consecutive-N.
+- `just live-scan <provider> <days>`: extractor shape-check against the
+  real logs (validated: claude-opus-5-5 n=6265 ttft p50 3.21 s / 87 tok/s;
+  gpt-6-astra n=135 tok/s p50 28.3 — burst filter confirmed on live data).
+
 ## 0.1.0 — M1+M2 (menu bar limits + burn-rate, measured)
 
 First working release. Native menu bar app (no Dock icon), zero third-party

@@ -62,6 +62,7 @@ struct PassiveProberTests {
         let control: SpyControl
         let logDir: URL
         let time: TimeBox
+        let stateURL: URL
     }
 
     private func makeHarness(
@@ -80,7 +81,8 @@ struct PassiveProberTests {
         settings.controlProbeEnabled = controlEnabled
 
         let time = TimeBox(now.addingTimeInterval(nowOffset))
-        let tailer = SessionLogTailer(stateURL: root.appendingPathComponent("tail.json"))
+        let stateURL = root.appendingPathComponent("tail.json")
+        let tailer = SessionLogTailer(stateURL: stateURL)
         let provider = LogProvider(id: .claude, logDir: logDir)
         let writer = SpyWriter()
         let control = SpyControl()
@@ -94,7 +96,7 @@ struct PassiveProberTests {
             dateNow: { time.date },
             clock: ManualClock())
         return Harness(prober: prober, tailer: tailer, writer: writer, control: control,
-                       logDir: logDir, time: time)
+                       logDir: logDir, time: time, stateURL: stateURL)
     }
 
     private func probeRecords(_ records: [StoreRecord]) -> [ProbeSample] {
@@ -210,6 +212,21 @@ struct PassiveProberTests {
     }
 
     // MARK: - Backfill
+
+    @Test func scanNowPersistsTailerState() async throws {
+        // Regression: offsets must reach disk, or every launch re-reads the
+        // whole log tree and re-appends the day's samples as duplicates.
+        let h = try makeHarness(seed: ["s.jsonl": claudePair(id: "r1", start: now)])
+        await h.prober.scanNow()
+        let data = try #require(try? Data(contentsOf: h.stateURL))
+        let text = String(decoding: data, as: UTF8.self)
+        #expect(text.contains("s.jsonl"))
+
+        // Fresh instance on the same state must not re-read the file.
+        await h.tailer.loadState()
+        await h.prober.scanNow()
+        #expect(probeRecords(await h.writer.records).count == 1)
+    }
 
     @Test func backfillSeedsOnceWithoutDuplicates() async throws {
         // "Yesterday" file relative to dateNow; scan loop runs on ManualClock
