@@ -81,6 +81,7 @@ public actor HalScanner {
             if decoded.role == "assistant", decoded.providerID == "hal", decoded.error == nil, decoded.time?.completed == nil { break }
             scanState.cursor = row.rowid
             if let error = decoded.error {
+                guard decoded.role == "assistant", decoded.providerID == "hal" else { continue }
                 if error.name != "MessageAbortedError", let created = decoded.time?.created {
                     let statusCode = error.data?.statusCode
                     if statusCode == nil || statusCode! >= 400 {

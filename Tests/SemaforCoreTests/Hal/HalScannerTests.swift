@@ -72,7 +72,6 @@ struct HalScannerTests {
         let cursor = await s.state().cursor
         #expect(cursor == 1)
         #expect(await st.probeSamples(provider: .hal, since: .distantPast).isEmpty)
-        #expect(await s.recentErrors(now: Date(), window: 100_000).isEmpty)
     }
 
     @Test func abortedMessagesInvisible() async throws {
@@ -102,19 +101,49 @@ struct HalScannerTests {
         #expect(await s.recentErrors(now: now, window: 200).first?.code == 0)
     }
 
+    @Test func otherProviderErrorsIgnoredButHalErrorsRecorded() async throws {
+        let dir = try halTemp(), db = try fixture(dir), t: Int64 = 1_760_000_000_000
+        try insert(#"{"role":"assistant","providerID":"other","error":{"name":"APIError","data":{"statusCode":500}},"time":{"created":\#(t)}}"#, into: db)
+        try insert(#"{"role":"assistant","providerID":"hal","error":{"name":"APIError","data":{"statusCode":429}},"time":{"created":\#(t + 1000)}}"#, into: db)
+        let now = Date(timeIntervalSince1970: Double(t + 100_000) / 1000), s = HalScanner(dbPath: dir.appendingPathComponent("opencode.db").path, settings: AppSettings(), store: store(dir, now: now), stateURL: dir.appendingPathComponent("state"))
+        #expect(try await s.scanOnce(now: now) == 0)
+        #expect(await s.state().cursor == 2)
+        #expect(await s.state().recentErrors.map(\.code) == [429])
+    }
+
+    @Test func belowThresholdErrorIgnored() async throws {
+        let dir = try halTemp(), db = try fixture(dir), t: Int64 = 1_760_000_000_000
+        try insert(#"{"role":"assistant","providerID":"hal","error":{"name":"APIError","data":{"statusCode":307}},"time":{"created":\#(t)}}"#, into: db)
+        let now = Date(timeIntervalSince1970: Double(t + 100_000) / 1000), s = HalScanner(dbPath: dir.appendingPathComponent("opencode.db").path, settings: AppSettings(), store: store(dir, now: now), stateURL: dir.appendingPathComponent("state"))
+        #expect(try await s.scanOnce(now: now) == 0)
+        #expect(await s.state().cursor == 1)
+        #expect(await s.state().recentErrors.isEmpty)
+    }
+
     @Test func recordsPersistAndPrune() async throws {
         let dir = try halTemp(); _ = try fixture(dir)
         let state = dir.appendingPathComponent("state"), dbPath = dir.appendingPathComponent("opencode.db").path
         let old = Date(timeIntervalSince1970: 1_700_000_000), recent = Date(timeIntervalSince1970: 1_760_000_000)
-        let seeded = HalScanner.ScanState(cursor: 0, recentErrors: [HalErrorRecord(code: 1, at: old)] + (0..<250).map { HalErrorRecord(code: $0 + 10, at: recent.addingTimeInterval(Double($0))) })
+        let seeded = HalScanner.ScanState(cursor: 0, recentErrors: [HalErrorRecord(code: 1, at: old)] + (0..<5).map { HalErrorRecord(code: $0 + 10, at: recent.addingTimeInterval(Double($0))) })
         try JSONEncoder().encode(seeded).write(to: state)
         let now = Date(timeIntervalSince1970: 1_760_000_100), s = HalScanner(dbPath: dbPath, settings: AppSettings(), store: store(dir, now: now), stateURL: state)
         #expect(try await s.scanOnce(now: now) == 0)
+        #expect(await s.state().recentErrors.map(\.code) == [14, 13, 12, 11, 10])
+    }
+
+    @Test func recordsPersistAndCapAtTwoHundred() async throws {
+        let dir = try halTemp(); _ = try fixture(dir)
+        let state = dir.appendingPathComponent("state"), dbPath = dir.appendingPathComponent("opencode.db").path
+        let recent = Date(timeIntervalSince1970: 1_760_000_000)
+        let seeded = HalScanner.ScanState(cursor: 0, recentErrors: (0..<250).map { HalErrorRecord(code: $0, at: recent.addingTimeInterval(Double($0))) })
+        try JSONEncoder().encode(seeded).write(to: state)
+        let now = Date(timeIntervalSince1970: 1_760_000_100), scanner = HalScanner(dbPath: dbPath, settings: AppSettings(), store: store(dir, now: now), stateURL: state)
+        #expect(try await scanner.scanOnce(now: now) == 0)
         let restored = HalScanner(dbPath: dbPath, settings: AppSettings(), store: store(dir, now: now), stateURL: state)
-        let records = await restored.recentErrors(now: now, window: 7 * 24 * 3600)
-        #expect(records.count == 200)
-        #expect(records.first?.code == 259)
-        #expect(records.last?.code == 60)
+        let codes = await restored.state().recentErrors.map(\.code)
+        #expect(codes.count == 200)
+        #expect(codes.first == 249)
+        #expect(codes.last == 50)
     }
 
     @Test func streamingRowStopsCursorUntilCompleted() async throws {
