@@ -81,8 +81,9 @@ final class AppModel: ObservableObject {
         guard let latest = latestSnapshots.values.map(\.fetchedAt).max() else {
             return "no poll yet"
         }
-        let minutes = Int(Date().timeIntervalSince(latest) / 60)
-        return minutes < 1 ? "last poll just now" : "last poll \(minutes)m ago"
+        let seconds = max(0, Int(Date().timeIntervalSince(latest)))
+        if seconds < 600 { return "poll \(seconds) s ago" }
+        return "poll \(seconds / 60)m ago"
     }
 
     func startPolling() {
@@ -211,7 +212,7 @@ struct SemaforApp: App {
         Window("Semafor Settings", id: "settings") {
             SettingsView(model: model)
         }
-        .defaultSize(width: 380, height: 420)
+        .defaultSize(width: 420, height: 460)
     }
 
     static func color(for status: StatusItemModel.StatusColor) -> Color {

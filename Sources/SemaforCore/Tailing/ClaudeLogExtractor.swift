@@ -157,6 +157,7 @@ public struct ClaudeLogExtractor: SessionLogExtracting {
             ttft: ttft,
             duration: duration,
             tokensPerSecond: tokensPerSecond,
+            tokens: pending.tokens,
             outcome: .ok,
             timestamp: pending.startTs)
     }

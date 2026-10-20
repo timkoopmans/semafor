@@ -62,6 +62,23 @@ struct MenuContentView: View {
                     MetricTileView(tile: tile, caption: "tok/s")
                 }
             }
+            if let bars = section.tokenBars {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .bottom, spacing: 3) {
+                        ForEach(Array(bars.enumerated()), id: \.offset) { _, bar in
+                            RoundedRectangle(cornerRadius: 1.5)
+                                .fill(bar.isToday ? Color.accentColor : Color.secondary.opacity(0.35))
+                                .frame(width: 10, height: max(2, CGFloat(bar.height) * 24))
+                        }
+                    }
+                    .accessibilityLabel(section.tokenCaption ?? "tokens per day")
+                    if let caption = section.tokenCaption {
+                        Text(caption)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
             if let headline = section.headline {
                 Text(headline)
                     .font(.caption)
@@ -104,12 +121,17 @@ struct MenuContentView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 8) {
-            Text(model.lastPollText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Button("Test now") { model.refreshAll() }
+        HStack(spacing: 6) {
+            // Own 1 s timeline so the age counts up live between the 30 s
+            // UI ticks; monospaced digits stop the width jittering.
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                Text(model.lastPollText)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .layoutPriority(1)
+            }
+            Spacer(minLength: 4)
+            Button("Refresh") { model.refreshAll() }
             Button(model.paused ? "Resume" : "Pause") { model.togglePaused() }
             Button {
                 NSApplication.shared.activate(ignoringOtherApps: true)

@@ -160,6 +160,53 @@ struct ViewModelsVerdictsTests {
         #expect(dip.tileTokPerSec?.series.min() == 0.25)
     }
 
+    // MARK: - Tokens-per-day bar strip
+
+    private func daySamples(_ dayOffset: Int, _ tokenCounts: [Int?], provider: ProviderID = .claude) -> [ProbeSample] {
+        let cal = Calendar.current
+        guard let dayStart = cal.date(byAdding: .day, value: dayOffset, to: cal.startOfDay(for: now)) else {
+            fatalError("no day start")
+        }
+        let ts = dayStart.addingTimeInterval(3 * 3600)  // mid-day, calendar-safe
+        return tokenCounts.enumerated().map { index, tokens in
+            ProbeSample(
+                provider: provider, model: "claude-opus-5-5",
+                sessionKey: "day#\(dayOffset)-\(index)",
+                ttft: 2.0, duration: 3, tokensPerSecond: 80,
+                tokens: tokens, outcome: .ok, timestamp: ts)
+        }
+    }
+
+    @Test func tokenBarsSumPerLocalDayAndCaption() throws {
+        var recent = daySamples(0, [500, 7400]) + daySamples(-1, [12000]) + daySamples(-3, [38000])
+        recent += [sample(offset: -60, ttft: nil, tokPerSec: nil, outcome: .timeout)]  // never counted
+        let model = section(recent: recent)
+        let bars = try #require(model.tokenBars)
+        #expect(bars.count == 7)
+        #expect(bars[6].isToday)
+        #expect(bars[6].tokens == 7900)
+        #expect(bars[5].tokens == 12000)
+        #expect(bars[3].tokens == 38000)
+        #expect(bars[0].tokens == 0)  // empty days still draw a slot
+        #expect(bars[3].height == 1.0)  // peak day normalizes to full height
+        #expect(abs(bars[6].height - 7900.0 / 38000.0) < 0.0001)
+        #expect(model.tokenCaption == "7.9k tok today · peak 38k this week")
+    }
+
+    @Test func tokenBarsNilWithoutCounts() {
+        #expect(section(recent: []).tokenBars == nil)
+        #expect(section(recent: [sample(offset: -60)]).tokenCaption == nil)  // helper stores nil counts
+        let mixed = section(recent: daySamples(0, [nil, 1200]))
+        #expect(mixed.tokenBars?.last?.tokens == 1200)  // nil counts skipped
+    }
+
+    @Test func tokenCaptionFormats() {
+        let small = section(recent: daySamples(0, [850]))
+        #expect(small.tokenCaption == "850 tok today · peak 850 this week")
+        let big = section(recent: daySamples(0, [1_234_567]))
+        #expect(big.tokenCaption == "1.2M tok today · peak 1.2M this week")
+    }
+
     // MARK: - Measured caption and banner
 
     @Test func measuredText() {

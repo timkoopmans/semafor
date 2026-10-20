@@ -152,6 +152,9 @@ public struct CodexLogExtractor: SessionLogExtracting {
         } else {
             tokensPerSecond = nil
         }
+        // Honest count: accepted bursts only (rejected idle-gap deltas stay
+        // rejected); nil when nothing was accepted rather than a fake 0.
+        let tokens: Int? = turn.acceptedTokens > 0 ? turn.acceptedTokens : nil
         let sample = ProbeSample(
             provider: .codex,
             model: turn.model ?? "codex-unknown",
@@ -159,6 +162,7 @@ public struct CodexLogExtractor: SessionLogExtracting {
             ttft: ttft,
             duration: max(0, completeTs.timeIntervalSince(turn.startTs)),
             tokensPerSecond: tokensPerSecond,
+            tokens: tokens,
             outcome: .ok,
             timestamp: turn.startTs)
         completed.append(CompletedTurn(path: path, sampleStart: turn.startTs, sample: sample))

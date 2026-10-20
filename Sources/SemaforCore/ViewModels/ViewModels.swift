@@ -22,6 +22,20 @@ public struct MetricTileModel: Equatable, Sendable {
     }
 }
 
+/// One day slot of the popover's 7-day token bar strip.
+public struct DailyTokenBar: Equatable, Sendable {
+    public let tokens: Int
+    /// 0…1 normalised against the week's peak day.
+    public let height: Double
+    public let isToday: Bool
+
+    public init(tokens: Int, height: Double, isToday: Bool) {
+        self.tokens = tokens
+        self.height = height
+        self.isToday = isToday
+    }
+}
+
 /// Everything the popover renders for one provider. Pure value type so all
 /// copy is unit-testable without SwiftUI (spec §9).
 public struct ProviderSectionModel: Equatable, Sendable {
@@ -49,6 +63,10 @@ public struct ProviderSectionModel: Equatable, Sendable {
     /// that metric in the last 24 h.
     public let tileTTFT: MetricTileModel?
     public let tileTokPerSec: MetricTileModel?
+    /// 7-day tokens-per-day strip (oldest → today); nil until any stored
+    /// sample carries counts, so legacy days render nothing rather than a lie.
+    public let tokenBars: [DailyTokenBar]?
+    public let tokenCaption: String?
     public let measuredText: String?
     public let divergenceText: String?
 
@@ -136,6 +154,53 @@ public struct ProviderSectionModel: Equatable, Sendable {
             usable, value: \.tokensPerSecond, now: now, provider: snapshot.providerID,
             baseline: baseline, thresholds: thresholds,
             fallbackMedian: settings.baselineDefaultTokPerSec, higherIsWorse: false)
+
+        let strip = Self.tokenStrip(
+            recentSamples, now: now, provider: snapshot.providerID, calendar: Calendar.current)
+        tokenBars = strip?.0
+        tokenCaption = strip?.1
+    }
+
+    /// Sums `.ok` sample tokens per local day over the last 7 days (fixed
+    /// slots so the strip doesn't jiggle); nil when no sample carries a
+    /// count or every day is zero.
+    private static func tokenStrip(
+        _ samples: [ProbeSample], now: Date, provider: ProviderID, calendar: Calendar
+    ) -> ([DailyTokenBar], String)? {
+        let today = calendar.startOfDay(for: now)
+        var totals = [Int](repeating: 0, count: 7)
+        var anyCount = false
+        for sample in samples {
+            guard sample.provider == provider, sample.outcome == .ok,
+                  let tokens = sample.tokens, tokens >= 0
+            else { continue }
+            let day = calendar.startOfDay(for: sample.timestamp)
+            guard let diff = calendar.dateComponents([.day], from: day, to: today).day,
+                  (0...6).contains(diff)
+            else { continue }
+            totals[6 - diff] += tokens
+            anyCount = true
+        }
+        guard anyCount, let peak = totals.max(), peak > 0 else { return nil }
+        let bars = totals.enumerated().map { index, tokens in
+            DailyTokenBar(tokens: tokens, height: Double(tokens) / Double(peak), isToday: index == 6)
+        }
+        let caption = "\(compactTokens(totals[6])) tok today · peak \(compactTokens(peak)) this week"
+        return (bars, caption)
+    }
+
+    static func compactTokens(_ count: Int) -> String {
+        let value: Double
+        let suffix: String
+        if count >= 1_000_000 {
+            (value, suffix) = (Double(count) / 1_000_000, "M")
+        } else if count >= 1_000 {
+            (value, suffix) = (Double(count) / 1_000, "k")
+        } else {
+            return "\(count)"
+        }
+        let text = String(format: "%.1f", value)
+        return (text.hasSuffix(".0") ? String(text.dropLast(2)) : text) + suffix
     }
 
     /// Value/median/z triplet for one metric. The series is normalized

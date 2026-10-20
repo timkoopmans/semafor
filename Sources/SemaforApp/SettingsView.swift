@@ -96,7 +96,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 380)
+        .frame(width: 420)
         .padding(.bottom, 8)
     }
 
@@ -104,23 +104,31 @@ struct SettingsView: View {
         _ title: String, value: Binding<Int>, range: ClosedRange<Int>,
         store: @escaping (Int) -> Void
     ) -> some View {
-        TextField(title, value: value, format: .number)
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 90)
-            .onChange(of: value.wrappedValue) { _, clamped in
-                store(min(max(clamped, range.lowerBound), range.upperBound))
-            }
+        // LabeledContent keeps the label on one line and trails the field —
+        // plain TextField(title) let the label column collapse and hyphenate.
+        LabeledContent(title) {
+            TextField("", value: value, format: .number)
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 64)
+                .onChange(of: value.wrappedValue) { _, clamped in
+                    store(min(max(clamped, range.lowerBound), range.upperBound))
+                }
+        }
     }
 
     private func numberField(
         _ title: String, value: Binding<Double>, fractionDigits: Int,
         clamp: ClosedRange<Double>, store: @escaping (Double) -> Void
     ) -> some View {
-        TextField(title, value: value, format: .number.precision(.fractionLength(0...fractionDigits)))
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 90)
-            .onChange(of: value.wrappedValue) { _, clamped in
-                store(min(max(clamped, clamp.lowerBound), clamp.upperBound))
-            }
+        LabeledContent(title) {
+            TextField("", value: value, format: .number.precision(.fractionLength(0...fractionDigits)))
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 64)
+                .onChange(of: value.wrappedValue) { _, clamped in
+                    store(min(max(clamped, clamp.lowerBound), clamp.upperBound))
+                }
+        }
     }
 }

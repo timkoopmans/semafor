@@ -47,6 +47,7 @@ struct CodexLogExtractorTests {
         #expect(abs(healthy.duration! - 9.433) < 0.001)  // task_complete − start
         // Accepted burst only: 100 tokens over the one adjacent 5 s pair.
         #expect(healthy.tokensPerSecond == 20)
+        #expect(healthy.tokens == 100)  // accepted-burst total, not rate×duration
     }
 
     @Test func toolCallTurnHasNoTTFTButKeepsThroughput() throws {
@@ -56,6 +57,7 @@ struct CodexLogExtractorTests {
         #expect(tools.ttft == nil)  // function_call seen ⇒ TTFT proxy invalid
         #expect(tools.duration == 14.0)
         #expect(tools.tokensPerSecond == 10)  // 50 tokens / 5 s
+        #expect(tools.tokens == 50)
     }
 
     @Test func idleGapIsBurstFilteredNotCrawl() throws {
@@ -88,6 +90,7 @@ struct CodexLogExtractorTests {
         #expect(samples.count == 1)
         #expect(samples.first?.model == "gpt-6-astra-preview")
         #expect(samples.first?.tokensPerSecond == nil)  // no token bursts
+        #expect(samples.first?.tokens == nil)
     }
 
     @Test func refeedingSameFileProducesIdenticalSessionKeys() throws {

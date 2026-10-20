@@ -135,6 +135,9 @@ public struct ProbeSample: Codable, Equatable, Sendable {
     public let ttft: TimeInterval?
     public let duration: TimeInterval?
     public let tokensPerSecond: Double?
+    /// Output tokens for the call (Claude: final cumulative usage; Codex:
+    /// accepted burst total). nil when unmeasured — never a fake zero.
+    public let tokens: Int?
     public let outcome: ProbeOutcome
     /// Request/turn start.
     public let timestamp: Date
@@ -146,6 +149,7 @@ public struct ProbeSample: Codable, Equatable, Sendable {
         ttft: TimeInterval?,
         duration: TimeInterval?,
         tokensPerSecond: Double?,
+        tokens: Int? = nil,
         outcome: ProbeOutcome,
         timestamp: Date
     ) {
@@ -155,12 +159,13 @@ public struct ProbeSample: Codable, Equatable, Sendable {
         self.ttft = ttft
         self.duration = duration
         self.tokensPerSecond = tokensPerSecond
+        self.tokens = tokens
         self.outcome = outcome
         self.timestamp = timestamp
     }
 
     private enum CodingKeys: String, CodingKey {
-        case provider, model, sessionKey, ttft, duration, tokensPerSecond, outcome, timestamp
+        case provider, model, sessionKey, ttft, duration, tokensPerSecond, tokens, outcome, timestamp
     }
 
     public init(from decoder: any Decoder) throws {
@@ -171,6 +176,7 @@ public struct ProbeSample: Codable, Equatable, Sendable {
         ttft = try container.decodeIfPresent(Double.self, forKey: .ttft)
         duration = try container.decodeIfPresent(Double.self, forKey: .duration)
         tokensPerSecond = try container.decodeIfPresent(Double.self, forKey: .tokensPerSecond)
+        tokens = try container.decodeIfPresent(Int.self, forKey: .tokens)
         outcome = try container.decode(ProbeOutcome.self, forKey: .outcome)
         let text = try container.decode(String.self, forKey: .timestamp)
         guard let date = StoreDateCoding.parse(text) else {

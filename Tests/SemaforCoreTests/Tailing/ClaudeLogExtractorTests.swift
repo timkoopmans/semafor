@@ -41,6 +41,7 @@ struct ClaudeLogExtractorTests {
         #expect(health.ttft == 2.0)
         #expect(health.duration == 4.0)
         #expect(health.tokensPerSecond == 37.5)  // 150 tokens / 4 s
+        #expect(health.tokens == 150)  // final cumulative usage count
         #expect(health.model == "claude-opus-5-5")
         #expect(health.timestamp == date("2026-10-20T03:00:00.000Z"))
 
@@ -114,5 +115,46 @@ struct ClaudeLogExtractorTests {
         extractor.ingest(TailedLine(url: url, text:
             #"{"type":"assistant","requestRef":"r9","timestamp":"today","message":{"model":"claude-opus-5-5","usage":{"output_tokens":40}}}"#))
         #expect(extractor.finish(now: date("2026-10-20T12:00:00Z")).isEmpty)
+    }
+
+    // MARK: - Token counts (7-day bar strip source)
+
+    private func feed(_ extractor: inout ClaudeLogExtractor, _ text: String) {
+        extractor.ingest(TailedLine(url: URL(fileURLWithPath: "/tokens.jsonl"), text: text))
+    }
+
+    @Test func completedSampleCarriesFinalTokenCount() {
+        var extractor = ClaudeLogExtractor(quietPeriod: 2)
+        feed(&extractor, #"{"type":"api-request","id":"t1","timestamp":"2026-10-20T03:00:00.000Z","querySource":"repl_main_thread","params":{"model":"claude-opus-5-5"}}"#)
+        feed(&extractor, #"{"type":"assistant","requestRef":"t1","requestedModel":"claude-opus-5-5","timestamp":"2026-10-20T03:00:01.000Z","message":{"model":"claude-opus-5-5","usage":{"output_tokens":40}}}"#)
+        feed(&extractor, #"{"type":"assistant","requestRef":"t1","requestedModel":"claude-opus-5-5","timestamp":"2026-10-20T03:00:02.000Z","message":{"model":"claude-opus-5-5","usage":{"output_tokens":80}}}"#)
+        let samples = extractor.finish(now: date("2026-10-20T03:10:00Z"))
+        #expect(samples.count == 1)
+        #expect(samples[0].tokens == 80)  // final cumulative, not the max delta
+        #expect(samples[0].tokensPerSecond == 40)
+    }
+
+    @Test func tinyCallStillRecordsTokensWithoutRate() {
+        var extractor = ClaudeLogExtractor(quietPeriod: 2)
+        feed(&extractor, #"{"type":"api-request","id":"t2","timestamp":"2026-10-20T03:00:00.000Z","querySource":"repl_main_thread","params":{"model":"claude-opus-5-5"}}"#)
+        feed(&extractor, #"{"type":"assistant","requestRef":"t2","requestedModel":"claude-opus-5-5","timestamp":"2026-10-20T03:00:02.000Z","message":{"model":"claude-opus-5-5","usage":{"output_tokens":3}}}"#)
+        let samples = extractor.finish(now: date("2026-10-20T03:10:00Z"))
+        #expect(samples.count == 1)
+        #expect(samples[0].tokens == 3)  // real count even below the rate floor
+        #expect(samples[0].tokensPerSecond == nil)
+    }
+
+    @Test func stalledRequestHasNoTokenCount() {
+        var extractor = ClaudeLogExtractor(quietPeriod: 2)
+        feed(&extractor, #"{"type":"api-request","id":"stall","timestamp":"2026-10-20T03:00:00.000Z","querySource":"repl_main_thread","params":{"model":"claude-opus-5-5"}}"#)
+        feed(&extractor, #"{"type":"api-request","id":"next","timestamp":"2026-10-20T03:01:00.000Z","querySource":"repl_main_thread","params":{"model":"claude-opus-5-5"}}"#)
+        feed(&extractor, #"{"type":"assistant","requestRef":"next","requestedModel":"claude-opus-5-5","timestamp":"2026-10-20T03:01:01.000Z","message":{"model":"claude-opus-5-5","usage":{"output_tokens":50}}}"#)
+        let samples = extractor.finish(now: date("2026-10-20T03:10:00Z"))
+        guard let stalled = samples.first(where: { $0.sessionKey == "tokens.jsonl#stall" }) else {
+            Issue.record("missing stall sample")
+            return
+        }
+        #expect(stalled.outcome == .timeout)
+        #expect(stalled.tokens == nil)
     }
 }

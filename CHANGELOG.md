@@ -93,3 +93,15 @@ dependencies, macOS 14+.
       popover layout, Test now / Pause behavior.
 - [ ] First-run Keychain approval for the `Claude Code-credentials` item
       (click Always Allow when macOS asks once per new build).
+## 0.2.2 — token history + settings polish
+
+- 7-day tokens/day bar strip per provider (today tinted, caption "7.9k tok
+  today · peak 38k this week"). `ProbeSample` gained `tokens: Int?` — Claude
+  samples carry the final cumulative `output_tokens`, Codex samples the
+  accepted-burst total (never rate×duration, which lies across idle gaps).
+  Legacy rows decode as nil and simply draw no strip until counts exist.
+- Settings window: proper `LabeledContent` rows — labels no longer hyphenate
+  into "Sam-ple recen-cy", fields right-aligned, window widened to 420.
+- Footer: live per-second poll counter ("poll 37 s ago", own TimelineView so
+  it ticks between UI rebuilds); "Test now" renamed "Refresh"; the counter
+  can no longer be truncated by the buttons.
