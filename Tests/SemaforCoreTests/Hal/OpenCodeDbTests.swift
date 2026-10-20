@@ -70,4 +70,29 @@ import Testing
             try db.exec("INSERT INTO message (id, data) VALUES ('d', 'fourth')")
         }
     }
+
+    @Test func rowsPreserveEmbeddedNULCharacters() throws {
+        let (path, db) = try makeDatabase()
+        defer {
+            db.close()
+            try? FileManager.default.removeItem(at: URL(fileURLWithPath: path).deletingLastPathComponent())
+        }
+        try db.exec("INSERT INTO message (id, data) VALUES ('nul', CAST(X'610062' AS TEXT))")
+
+        let row = try #require(db.rows(after: 3, limit: 1).first)
+        #expect(row.data == "a\0b")
+    }
+
+    @Test func rowsRejectNullData() throws {
+        let (path, db) = try makeDatabase()
+        defer {
+            db.close()
+            try? FileManager.default.removeItem(at: URL(fileURLWithPath: path).deletingLastPathComponent())
+        }
+        try db.exec("INSERT INTO message (id, data) VALUES ('null', NULL)")
+
+        #expect(throws: OpenCodeDb.DbError.self) {
+            try db.rows(after: 3, limit: 1)
+        }
+    }
 }

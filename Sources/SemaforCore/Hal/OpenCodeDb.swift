@@ -58,7 +58,12 @@ public final class OpenCodeDb: @unchecked Sendable {
             if status == SQLITE_DONE { return result }
             guard status == SQLITE_ROW else { throw DbError.queryFailed(status: Int32(status)) }
             let rowid = sqlite3_column_int64(statement, 0)
-            let data = sqlite3_column_text(statement, 1).map { String(cString: $0) } ?? ""
+            // `Row.data` is non-optional, so reject SQL NULL rather than conflating it with empty text.
+            guard let text = sqlite3_column_text(statement, 1) else {
+                throw DbError.queryFailed(status: Int32(SQLITE_MISMATCH))
+            }
+            let byteCount = Int(sqlite3_column_bytes(statement, 1))
+            let data = String(decoding: UnsafeBufferPointer(start: text, count: byteCount), as: UTF8.self)
             result.append(Row(rowid: rowid, data: data))
         }
     }
@@ -73,7 +78,7 @@ public final class OpenCodeDb: @unchecked Sendable {
 
     public func close() {
         guard let handle else { return }
-        sqlite3_close(handle)
+        sqlite3_close_v2(handle)
         self.handle = nil
     }
 }
