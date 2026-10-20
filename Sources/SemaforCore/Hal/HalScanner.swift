@@ -100,7 +100,7 @@ public actor HalScanner {
         scanning = true
         defer { scanning = false }
         let db = try OpenCodeDb(path: dbPath)
-        let rows = try db.sessionMessages(after: scanState.cursor, limit: 1000)
+        let rows = try db.sessionMessages(after: scanState.cursor, limit: 2000)
         var count = 0
         for row in rows {
             guard let decoded = try? JSONDecoder().decode(MessageData.self, from: Data(row.data.utf8)) else { scanState.cursor = row.rowid; continue }
@@ -113,7 +113,7 @@ public actor HalScanner {
                 // every other type — known or unknown — records code + time only.
                 if error.type != "aborted", let created = decoded.time?.created {
                     let status = error.status
-                    scanState.recentErrors.append(HalErrorRecord(code: status != nil && status! >= 400 ? status! : 0, at: Date(timeIntervalSince1970: Double(created) / 1000)))
+                    scanState.recentErrors.append(HalErrorRecord(code: status.map { $0 >= 400 ? $0 : 0 } ?? 0, at: Date(timeIntervalSince1970: Double(created) / 1000)))
                 }
                 continue
             }

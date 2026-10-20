@@ -116,17 +116,16 @@ struct HalScannerTests {
         #expect(await s.state().recentErrors.map(\.code) == [429])
     }
 
-    @Test func belowThresholdErrorIgnored() async throws {
-        // Statuses below the 400 server-fault threshold are ignored as codes:
-        // the record keeps the timestamp but carries code 0.
+    @Test func belowThresholdErrorRecordsZero() async throws {
+        // A status below the 400 server-fault threshold still records a row
+        // (not dropped) — the code just normalizes to 0, timestamp preserved.
         let dir = try halTemp(), db = try fixture(dir), t: Int64 = 1_760_000_000_000
         try insert(#"{"model":{"id":"m","providerID":"hal"},"error":{"type":"provider.error","status":307},"time":{"created":\#(t)}}"#, into: db)
         let now = Date(timeIntervalSince1970: Double(t + 100_000) / 1000), s = HalScanner(dbPath: dir.appendingPathComponent("opencode.db").path, settings: AppSettings(), store: store(dir, now: now), stateURL: dir.appendingPathComponent("state"))
         #expect(try await s.scanOnce(now: now) == 0)
         #expect(await s.state().cursor == 1)
-        let records = await s.state().recentErrors
-        #expect(records.map(\.code) == [0])
-        #expect(records.first?.at == Date(timeIntervalSince1970: Double(t) / 1000))
+        #expect(await s.recentErrors(now: now, window: 200).map(\.code) == [0])
+        #expect(await s.recentErrors(now: now, window: 200).first?.at == Date(timeIntervalSince1970: Double(t) / 1000))
     }
 
     @Test func recordsPersistAndPrune() async throws {
