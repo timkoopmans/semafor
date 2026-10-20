@@ -139,4 +139,17 @@ struct ClaudeProviderTests {
         #expect(windows.first { $0.name == .fiveHour }?.usedPercent == 0.42)
         #expect(windows.first { $0.name == .sevenDay }?.usedPercent == 68.5)
     }
+
+    @Test func stringUtilizationDecodesLeniently() async throws {
+        // Drift pin (Review Focus class 1): Anthropic shipping
+        // "utilization": "42.5" must nil-degrade values, not blank both
+        // windows via a whole-document .decoding failure.
+        let provider = makeProvider(
+            credentials: FakeClaudeCredentials(mode: .token("test-token")),
+            client: okStub(Data(
+                #"{"five_hour":{"utilization":"42.5","resets_at":"2026-10-20T09:30:00Z"}}"#.utf8)))
+        let windows = try await provider.fetchLimits()
+        let fiveHour = try #require(windows.first)
+        #expect(fiveHour.usedPercent == 42.5)
+    }
 }

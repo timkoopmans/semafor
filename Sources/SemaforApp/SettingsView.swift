@@ -11,6 +11,7 @@ struct SettingsView: View {
     @State private var launchAtLogin: Bool
     @State private var claudeProbeModelID: String
     @State private var codexProbeModelID: String
+    @State private var confirmingReset = false
 
     init(model: AppModel) {
         self.model = model
@@ -53,7 +54,15 @@ struct SettingsView: View {
             }
 
             Section {
-                Button("Reset data…", role: .destructive) { model.resetData() }
+                Button("Reset data…", role: .destructive) { confirmingReset = true }
+                    .confirmationDialog(
+                        "Delete all locally recorded limit samples?",
+                        isPresented: $confirmingReset,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Reset data", role: .destructive) { model.resetData() }
+                        Button("Cancel", role: .cancel) {}
+                    }
             } header: {
                 Text("Sample store")
             } footer: {

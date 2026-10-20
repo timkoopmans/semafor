@@ -6,7 +6,7 @@ rate-limited, degrading, or about to run dry — measured, not as advertised.
 
 Menu bar shows the worst window utilization across providers; the popover
 carries per-provider usage windows with reset countdowns and a burn-rate
-headline ("at this pace, weekly window gone ~Thu 14:00").
+headline ("at this pace, gone ~Thu 14:00 (±3h)").
 
 Reads the OAuth credentials your CLIs already keep on this machine (macOS
 Keychain for Claude Code, `~/.codex/auth.json` for Codex) and talks only to

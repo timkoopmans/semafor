@@ -208,6 +208,67 @@ struct SampleStoreTests {
         #expect(windows.count == 1)
     }
 
+    @Test func appendFailureOnExistingFilePreservesHistory() async throws {
+        let dir = try tempDirectory()
+        let dateBox = DateBox(Date(timeIntervalSince1970: 1_760_000_000))
+        let store = makeStore(directory: dir, dateNow: { dateBox.now })
+        try await store.append(limitsRecord(.claude, 10))
+
+        // Make the existing day file unopenable for writing: append must fail
+        // loudly, NOT fall back to payload.write(to:) which would replace
+        // (truncate) the day's history.
+        let dayFile = dir.appendingPathComponent("limits-2025-10-09.jsonl")
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o444], ofItemAtPath: dayFile.path)
+        await #expect(throws: (any Error).self) {
+            try await store.append(limitsRecord(.claude, 20))
+        }
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o644], ofItemAtPath: dayFile.path)
+
+        let windows = await store.limits(provider: .claude, since: .distantPast)
+        #expect(windows.count == 1)
+        #expect(windows[0].usedPercent == 10)
+    }
+
+    @Test func rotationNeverDeletesTodaysFileWhenOverCap() async throws {
+        let dir = try tempDirectory()
+        let dateBox = DateBox(Date(timeIntervalSince1970: 1_760_000_000))
+        let store = makeStore(directory: dir, dateNow: { dateBox.now }, maxBytesPerType: 1)
+        try await store.append(limitsRecord(.claude, 10))
+        try await store.append(limitsRecord(.claude, 20))
+        // Today's file is alone and over the cap; deleting it would discard
+        // the in-progress day. It must survive.
+        #expect(FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("limits-2025-10-09.jsonl").path))
+        let windows = await store.limits(provider: .claude, since: .distantPast)
+        #expect(windows.count == 2)
+    }
+
+    @Test func recordUsesNamedKeysAndStillReadsLegacyLines() async throws {
+        let dir = try tempDirectory()
+        let dateBox = DateBox(Date(timeIntervalSince1970: 1_760_000_000))
+        let store = makeStore(directory: dir, dateNow: { dateBox.now })
+        try await store.append(limitsRecord(.claude, 42))
+
+        let fileURL = dir.appendingPathComponent("limits-2025-10-09.jsonl")
+        let contents = try String(contentsOf: fileURL, encoding: .utf8)
+        let json = try #require(
+            JSONSerialization.jsonObject(with: Data(contents.utf8)) as? [String: Any])
+        let payload = try #require(json["limits"] as? [String: Any])
+        #expect(payload["provider"] != nil)
+        #expect(payload["windows"] != nil)
+        #expect(payload["_0"] == nil)
+
+        // Legacy synthesized lines (_0/_1, numeric record fetchedAt) still read.
+        let legacy =
+            "{\"limits\":{\"_0\":\"claude\",\"_1\":[],\"fetchedAt\":814165265.65}}\n"
+        try contents.appending(legacy).write(to: fileURL, atomically: true, encoding: .utf8)
+        let windows = await store.limits(provider: .claude, since: .distantPast)
+        #expect(windows.count == 1)
+        #expect(await store.lastReadCorruptLineCount == 0)
+    }
+
     static func dayString(_ date: Date, calendar: Calendar) -> String {
         let formatter = DateFormatter()
         formatter.calendar = calendar

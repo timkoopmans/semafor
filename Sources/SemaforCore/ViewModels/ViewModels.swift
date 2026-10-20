@@ -172,13 +172,12 @@ public enum StatusItemModel {
         return .green
     }
 
-    /// Ladder when no provider reports a usable percent: auth problems or no
-    /// snapshots yet are grey; otherwise green (nothing to warn about).
+    /// Ladder when no provider reports a usable percent: any recorded error
+    /// (auth, network, HTTP, decoding) or no snapshots yet is grey — green is
+    /// reserved for "measured and fine" (spec §8.2/§9: unknown ≠ all-clear).
     private static func colorWithoutData(_ snapshots: [ProviderID: ProviderSnapshot]) -> StatusColor {
         if snapshots.isEmpty { return .grey }
-        if snapshots.values.contains(where: { if case .auth = $0.lastError { return true } else { return false } }) {
-            return .grey
-        }
+        if snapshots.values.contains(where: { $0.lastError != nil }) { return .grey }
         return .green
     }
 }

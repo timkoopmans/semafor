@@ -56,7 +56,11 @@ public actor SampleStore: LimitsWriting {
         var payload = try encoder.encode(record)
         payload.append(contentsOf: [0x0A])  // newline-terminated JSONL
         let url = fileURL(type: type, day: dayString(now))
-        if let handle = try? FileHandle(forWritingTo: url) {
+        if fileManager.fileExists(atPath: url.path) {
+            // Existing file: appending via handle can fail (permissions, fd
+            // exhaustion) — that must throw, never fall through to the
+            // whole-file write below, which would truncate the day's history.
+            let handle = try FileHandle(forWritingTo: url)
             defer { try? handle.close() }
             try handle.seekToEnd()
             try handle.write(contentsOf: payload)
@@ -110,7 +114,11 @@ public actor SampleStore: LimitsWriting {
             }
         }
 
-        let survivors = fileURLs(type: type)
+        // Size trim goes oldest-first but never deletes today's in-progress
+        // file, even alone-over-cap (the age loop already cannot touch it).
+        let survivors = fileURLs(type: type).filter {
+            $0.lastPathComponent != "\(type)-\(dayString(now)).jsonl"
+        }
         let sizes = try survivors.map { url -> Int in
             let attributes = try fileManager.attributesOfItem(atPath: url.path)
             return (attributes[.size] as? Int) ?? 0

@@ -100,8 +100,10 @@ final class AppModel: ObservableObject {
         for id in [ProviderID.claude, .codex] {
             guard let snapshot = latestSnapshots[id] else { continue }
             var projections: [WindowName: BurnRateEstimator.Projection] = [:]
+            // One store read per provider per rebuild, not per window.
+            let recent = await store.limits(provider: id, since: since)
             for name in Set(snapshot.windows.map(\.name)) {
-                let samples = await store.limits(provider: id, since: since)
+                let samples = recent
                     .filter { $0.name == name }
                     .compactMap { window -> (at: Date, usedPercent: Double)? in
                         guard let percent = window.usedPercent else { return nil }

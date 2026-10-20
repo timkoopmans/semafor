@@ -75,11 +75,15 @@ struct CodexUsageResponse: Decodable {
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        // try?-wrapped per alias so a wrong-shaped candidate falls through
+        // to the next spelling instead of aborting the document.
         // Live endpoint (Task 6 spike) reports singular `rate_limit`; the
         // plural spelling from early third-party docs stays as an alias.
-        rateLimits =
-            try container.decodeIfPresent(RateLimits.self, forKey: .rateLimit)
-            ?? container.decodeIfPresent(RateLimits.self, forKey: .rateLimits)
+        if let singular = try? container.decodeIfPresent(RateLimits.self, forKey: .rateLimit) {
+            rateLimits = singular
+        } else {
+            rateLimits = try? container.decodeIfPresent(RateLimits.self, forKey: .rateLimits)
+        }
     }
 
     struct RateLimits: Decodable {
@@ -95,12 +99,17 @@ struct CodexUsageResponse: Decodable {
 
         init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            primaryPayload =
-                try container.decodeIfPresent(WindowPayload.self, forKey: .primaryWindow)
-                ?? container.decodeIfPresent(WindowPayload.self, forKey: .primary)
-            secondaryPayload =
-                try container.decodeIfPresent(WindowPayload.self, forKey: .secondaryWindow)
-                ?? container.decodeIfPresent(WindowPayload.self, forKey: .secondary)
+            // try?-wrapped per alias: a wrong-shaped candidate falls through.
+            if let planned = try? container.decodeIfPresent(WindowPayload.self, forKey: .primaryWindow) {
+                primaryPayload = planned
+            } else {
+                primaryPayload = try? container.decodeIfPresent(WindowPayload.self, forKey: .primary)
+            }
+            if let planned = try? container.decodeIfPresent(WindowPayload.self, forKey: .secondaryWindow) {
+                secondaryPayload = planned
+            } else {
+                secondaryPayload = try? container.decodeIfPresent(WindowPayload.self, forKey: .secondary)
+            }
         }
     }
 

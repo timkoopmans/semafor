@@ -174,4 +174,27 @@ struct CodexProviderTests {
         #expect(primary.windowSeconds == 18_000)
         #expect(primary.resetsAt != nil)
     }
+
+    @Test func epochMillisecondsResetIsNormalized() async throws {
+        // Drift pin: 13-digit millisecond epochs decode to sane dates,
+        // not to year ~57,000 "resets in 20541423d".
+        let provider = makeProvider(
+            auth: FakeCodexAuth(mode: .tokens(validTokens)),
+            client: okStub(Data(
+                #"{"rate_limit":{"primary_window":{"used_percent":10,"reset_at":1765000000000}}}"#.utf8)))
+        let windows = try await provider.fetchLimits()
+        #expect(try #require(windows.first).resetsAt == Date(timeIntervalSince1970: 1_765_000_000))
+    }
+
+    @Test func malformedSingularFallsBackToPluralAlias() async throws {
+        // `rate_limit` present but wrong shape must not abort the document;
+        // the plural alias still gets its chance.
+        let provider = makeProvider(
+            auth: FakeCodexAuth(mode: .tokens(validTokens)),
+            client: okStub(Data(
+                #"{"rate_limit":17,"rate_limits":{"primary_window":{"used_percent":11,"limit_window_seconds":18000}}}"#.utf8)))
+        let windows = try await provider.fetchLimits()
+        let primary = try #require(windows.first { $0.name == .primary })
+        #expect(primary.usedPercent == 11.0)
+    }
 }

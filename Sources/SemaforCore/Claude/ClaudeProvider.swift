@@ -77,9 +77,18 @@ struct ClaudeUsageResponse: Decodable {
         let utilization: Double?
         let resetsAtValue: FlexibleDateValue?
 
-        enum CodingKeys: String, CodingKey {
+        private enum CodingKeys: String, CodingKey {
             case utilization
             case resetsAtValue = "resets_at"
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            // Lenient like Codex's: a string-typed "42.5" nil-degrades to a
+            // value, not to a whole-document decoding failure (Review Focus).
+            utilization = lenientDouble(container, .utilization)
+            resetsAtValue = try container.decodeIfPresent(
+                FlexibleDateValue.self, forKey: .resetsAtValue)
         }
     }
 }

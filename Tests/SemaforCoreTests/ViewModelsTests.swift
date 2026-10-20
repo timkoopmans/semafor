@@ -218,4 +218,17 @@ struct StatusItemModelTests {
             pollInterval: pollInterval, now: now)
         #expect(red.color == .red)
     }
+
+    @Test func coldStartNonAuthFailureGreysNotGreen() {
+        // Review fix I-2: nothing measured + repeated network failure must
+        // not read "all fine" green (spec §8.2: network failure counts as
+        // UNKNOWN, surfaced as grey pre-M3).
+        let snapshots: [ProviderID: ProviderSnapshot] = [
+            .claude: ProviderSnapshot(providerID: .claude, windows: [], fetchedAt: now, lastError: .network),
+            .codex: ProviderSnapshot(providerID: .codex, windows: [], fetchedAt: now, lastError: .network),
+        ]
+        let result = StatusItemModel.title(for: snapshots, pollInterval: pollInterval, now: now)
+        #expect(result.title == "✳ –")
+        #expect(result.color == .grey)
+    }
 }

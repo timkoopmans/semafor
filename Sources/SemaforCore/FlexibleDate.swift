@@ -9,18 +9,25 @@ struct FlexibleDateValue: Decodable, Sendable {
     init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
         if let seconds = try? container.decode(Double.self) {
-            date = Date(timeIntervalSince1970: seconds)
+            date = Self.date(fromEpochSeconds: seconds)
             return
         }
         if let text = try? container.decode(String.self) {
             if let seconds = Double(text) {
-                date = Date(timeIntervalSince1970: seconds)
+                date = Self.date(fromEpochSeconds: seconds)
                 return
             }
             date = Self.parsed(text)
             return
         }
         date = nil
+    }
+
+    /// Drift guard: 13-digit epoch-milliseconds values (a common provider
+    /// slip) would otherwise land in the 57,000s.
+    static func date(fromEpochSeconds raw: Double) -> Date {
+        let seconds = raw > 1e12 ? raw / 1000 : raw
+        return Date(timeIntervalSince1970: seconds)
     }
 
     nonisolated(unsafe) private static let iso: ISO8601DateFormatter = {

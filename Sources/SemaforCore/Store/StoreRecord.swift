@@ -8,16 +8,29 @@ public enum StoreRecord: Codable, Equatable, Sendable {
 
     private enum RootKeys: String, CodingKey { case limits }
     private enum PayloadKeys: String, CodingKey {
-        case provider = "_0"
-        case windows = "_1"
+        case provider
+        case windows
         case fetchedAt
+        case legacyProvider = "_0"
+        case legacyWindows = "_1"
     }
 
     public init(from decoder: any Decoder) throws {
         let root = try decoder.container(keyedBy: RootKeys.self)
         let payload = try root.nestedContainer(keyedBy: PayloadKeys.self, forKey: .limits)
-        let provider = try payload.decode(ProviderID.self, forKey: .provider)
-        let windows = try payload.decode([UsageWindow].self, forKey: .windows)
+        // Named keys; pre-readable-format lines used synthesized _0/_1.
+        let provider: ProviderID
+        if let named = try? payload.decode(ProviderID.self, forKey: .provider) {
+            provider = named
+        } else {
+            provider = try payload.decode(ProviderID.self, forKey: .legacyProvider)
+        }
+        let windows: [UsageWindow]
+        if let named = try? payload.decode([UsageWindow].self, forKey: .windows) {
+            windows = named
+        } else {
+            windows = try payload.decode([UsageWindow].self, forKey: .legacyWindows)
+        }
         let fetched = try payload.decode(FlexibleFetchedAt.self, forKey: .fetchedAt)
         self = .limits(provider, windows, fetchedAt: fetched.date)
     }
