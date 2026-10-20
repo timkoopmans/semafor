@@ -27,12 +27,19 @@ let rawRequested = arguments.contains("--raw")
 let settings = AppSettings(defaults: UserDefaults(suiteName: "com.timkoopmans.semafor.smoke")!)
 let http = URLSessionHTTPClient(timeout: 20)
 
+func unsupportedHal() -> Never {
+    FileHandle.standardError.write(Data("hal has no limits endpoint (health probe only)\n".utf8))
+    exit(2)
+}
+
 func makeProvider() -> any Provider {
     switch providerID {
     case .claude:
         ClaudeProvider(http: http, credentials: ClaudeKeychainReader(), settings: settings)
     case .codex:
         CodexProvider(http: http, auth: CodexFileReader(), settings: settings)
+    case .hal:
+        unsupportedHal()
     }
 }
 
@@ -70,6 +77,8 @@ if rawRequested {
             if let accountId = tokens.accountId {
                 headers["chatgpt-account-id"] = accountId
             }
+        case .hal:
+            unsupportedHal()
         }
 
         var request = URLRequest(url: url)
@@ -109,6 +118,8 @@ func runLiveScan(arguments: [String]) async {
             return ClaudeProvider(http: http, credentials: ClaudeKeychainReader(), settings: settings)
         case .codex:
             return CodexProvider(http: http, auth: CodexFileReader(), settings: settings)
+        case .hal:
+            unsupportedHal()
         }
     }()
 

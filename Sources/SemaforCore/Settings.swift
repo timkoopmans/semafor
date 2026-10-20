@@ -80,6 +80,10 @@ public final class AppSettings: @unchecked Sendable {
         static let baselineMinSamples = "baselineMinSamples"
         static let baselineDefaultTTFT = "baselineDefaultTTFT"
         static let baselineDefaultTokPerSec = "baselineDefaultTokPerSec"
+        static let halEnabled = "hal.enabled"
+        static let halBaseURL = "hal.baseURL"
+        static let halModelName = "hal.modelName"
+        static let halDbPath = "hal.dbPath"
         static let launchAtLogin = "launchAtLogin"
     }
 
@@ -162,6 +166,27 @@ public final class AppSettings: @unchecked Sendable {
     public var baselineDefaultTokPerSec: Double {
         get { value(Key.baselineDefaultTokPerSec, { ($0 as? NSNumber)?.doubleValue }, 20) }
         set { defaults.set(newValue, forKey: Key.baselineDefaultTokPerSec) }
+    }
+
+    public var halEnabled: Bool {
+        get { value(Key.halEnabled, { $0 as? Bool }, true) }
+        set { defaults.set(newValue, forKey: Key.halEnabled) }
+    }
+
+    public var halBaseURL: String {
+        get { value(Key.halBaseURL, { $0 as? String }, "http://hal:8000/v1") }
+        set { defaults.set(newValue, forKey: Key.halBaseURL) }
+    }
+
+    public var halModelName: String {
+        get { value(Key.halModelName, { $0 as? String }, "Qwen3.8-Flash-Next") }
+        set { defaults.set(newValue, forKey: Key.halModelName) }
+    }
+
+    /// Empty means the default OpenCode database location.
+    public var halDbPath: String {
+        get { value(Key.halDbPath, { $0 as? String }, "") }
+        set { defaults.set(newValue, forKey: Key.halDbPath) }
     }
 
     public var launchAtLogin: Bool {
