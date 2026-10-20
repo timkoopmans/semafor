@@ -53,7 +53,14 @@ struct MenuContentView: View {
                         }
                         .foregroundStyle(SemaforApp.color(for: section.chipColor))
                 }
-                SparklinePair(ttft: section.sparkTTFT, tokPerSec: section.sparkTokPerSec)
+            }
+            HStack(spacing: 10) {
+                if let tile = section.tileTTFT {
+                    MetricTileView(tile: tile, caption: "ttft")
+                }
+                if let tile = section.tileTokPerSec {
+                    MetricTileView(tile: tile, caption: "tok/s")
+                }
             }
             if let headline = section.headline {
                 Text(headline)

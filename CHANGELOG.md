@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.1 — metric tiles (dogfood feedback)
+
+Sparklines alone didn't answer "is this fast or slow": they auto-scaled, so
+every day looked equally wiggly, and normalized ttft/tok-s read opposite
+directions with no reference. Each provider now gets two metric tiles:
+latest absolute value (`87 tok/s`, `3.2 s ttft`) coloured by directional
+robust z against the learned baseline (amber past zWarn, red past zCrawl,
+only on the slow side), a `usual 80` caption from the same median the
+verdict ladder uses, and a squiggle on a fixed 0…2×-median domain with a
+dashed "usual" line dead centre.
+
 ## 0.2.0 — M3 (passive measurement + verdicts)
 
 **What's in**

@@ -1,5 +1,27 @@
 import Foundation
 
+/// One metric's at-a-glance triplet for the popover (spec §9): latest
+/// absolute value, learned "usual" median, fixed 0…2×-median series, and a
+/// colour from the directional robust z — so the tile answers "fast or slow"
+/// without reading the squiggle.
+public struct MetricTileModel: Equatable, Sendable {
+    public let valueText: String
+    public let usualText: String
+    /// Series normalized (÷ each sample's model median), clamped to 0…2.
+    public let series: [Double]
+    public let color: StatusItemModel.StatusColor
+
+    public init(
+        valueText: String, usualText: String, series: [Double],
+        color: StatusItemModel.StatusColor
+    ) {
+        self.valueText = valueText
+        self.usualText = usualText
+        self.series = series
+        self.color = color
+    }
+}
+
 /// Everything the popover renders for one provider. Pure value type so all
 /// copy is unit-testable without SwiftUI (spec §9).
 public struct ProviderSectionModel: Equatable, Sendable {
@@ -21,10 +43,12 @@ public struct ProviderSectionModel: Equatable, Sendable {
     public let isStale: Bool
     public let verdictChip: String?
     public let chipColor: StatusItemModel.StatusColor
-    /// Normalized (÷ current-segment median) `.ok` series for the sparklines
-    /// (spec §9), decimated to ≤ 48 points.
-    public let sparkTTFT: [Double]
-    public let sparkTokPerSec: [Double]
+    /// Latest value + "usual" median + fixed 0…2×-median series (spec §9),
+    /// colored by directional robust z against the same learned baseline the
+    /// verdict ladder uses. nil when the provider has no `.ok` sample with
+    /// that metric in the last 24 h.
+    public let tileTTFT: MetricTileModel?
+    public let tileTokPerSec: MetricTileModel?
     public let measuredText: String?
     public let divergenceText: String?
 
@@ -103,12 +127,71 @@ public struct ProviderSectionModel: Equatable, Sendable {
                 && now.timeIntervalSince($0.timestamp) <= 24 * 3600
         }
         let baseline = BaselineEngine(thresholds: settings.thresholds)
-        sparkTTFT = Self.sparkValues(usable, value: \.ttft, now: now,
-                                     provider: snapshot.providerID, baseline: baseline,
-                                     fallbackMedian: settings.baselineDefaultTTFT)
-        sparkTokPerSec = Self.sparkValues(usable, value: \.tokensPerSecond, now: now,
-                                          provider: snapshot.providerID, baseline: baseline,
-                                          fallbackMedian: settings.baselineDefaultTokPerSec)
+        let thresholds = settings.thresholds
+        tileTTFT = Self.metricTile(
+            usable, value: \.ttft, now: now, provider: snapshot.providerID,
+            baseline: baseline, thresholds: thresholds,
+            fallbackMedian: settings.baselineDefaultTTFT, higherIsWorse: true)
+        tileTokPerSec = Self.metricTile(
+            usable, value: \.tokensPerSecond, now: now, provider: snapshot.providerID,
+            baseline: baseline, thresholds: thresholds,
+            fallbackMedian: settings.baselineDefaultTokPerSec, higherIsWorse: false)
+    }
+
+    /// Value/median/z triplet for one metric. The series is normalized
+    /// (÷ each sample's model median) and clamped to the tile's fixed
+    /// 0…2×-median drawing domain, so height always means "vs usual".
+    private static func metricTile(
+        _ samples: [ProbeSample], value: KeyPath<ProbeSample, Double?>, now: Date,
+        provider: ProviderID, baseline: BaselineEngine, thresholds: Thresholds,
+        fallbackMedian: Double, higherIsWorse: Bool
+    ) -> MetricTileModel? {
+        let sorted = samples.filter { $0[keyPath: value] != nil }
+            .sorted { $0.timestamp < $1.timestamp }
+        guard let newest = sorted.last, let newestValue = newest[keyPath: value] else {
+            return nil
+        }
+        let key = baseline.key(at: now, provider: provider, model: newest.model)
+        let set = baseline.baseline(for: key, samples: samples, now: now)
+        let metric = higherIsWorse ? set.ttft : set.tokPerSec
+        let median = metric.median > 0 ? metric.median : fallbackMedian
+        let floor = higherIsWorse ? thresholds.madFloorTTFT : thresholds.madFloorTokPerSec
+
+        // One-directional z (review rule): only the slow side counts — high
+        // ttft, low tok/s — so a fast day never colours red.
+        let z: Double
+        if higherIsWorse, newestValue > median {
+            z = (newestValue - median) / max(metric.mad, floor)
+        } else if !higherIsWorse, newestValue < median {
+            z = (median - newestValue) / max(metric.mad, floor)
+        } else {
+            z = 0
+        }
+        let color: StatusItemModel.StatusColor
+        if z >= thresholds.zCrawl {
+            color = .red
+        } else if z >= thresholds.zWarn {
+            color = .amber
+        } else {
+            color = .green
+        }
+
+        let series = Self.sparkValues(
+            samples, value: value, now: now, provider: provider,
+            baseline: baseline, fallbackMedian: fallbackMedian
+        ).map { min($0, 2) }
+
+        let valueText: String
+        let usualText: String
+        if higherIsWorse {
+            valueText = String(format: "%.1f s", newestValue)
+            usualText = "usual " + String(format: "%.1f s", median)
+        } else {
+            valueText = Self.rateText(newestValue)
+            usualText = "usual " + Self.rateNumber(median)
+        }
+        return MetricTileModel(
+            valueText: valueText, usualText: usualText, series: series, color: color)
     }
 
     /// Per-model, ÷ the current segment's learned median so a provider that
@@ -164,9 +247,12 @@ public struct ProviderSectionModel: Equatable, Sendable {
     }
 
     static func rateText(_ rate: Double) -> String {
-        let number = rate == rate.rounded() && abs(rate) < 1000
+        "\(rateNumber(rate)) tok/s"
+    }
+
+    static func rateNumber(_ rate: Double) -> String {
+        rate == rate.rounded() && abs(rate) < 1000
             ? String(format: "%.0f", rate) : String(format: "%.1f", rate)
-        return "\(number) tok/s"
     }
 
     // MARK: - Copy

@@ -20,7 +20,7 @@ Keychain for Claude Code, `~/.codex/auth.json` for Codex) and talks only to
 each provider's usage endpoint, its official status page, and two public
 robots.txt URLs for the network control probe. Nothing is uploaded anywhere.
 
-Status: M1+M2+M3 shipped as 0.2.0 (`CHANGELOG.md`). M4 (capacity-event
+Status: M1+M2+M3 shipped as 0.2.x (`CHANGELOG.md`). M4 (capacity-event
 notifications, launch polish) gets its own plan. Design:
 `docs/superpowers/specs/`, plans: `docs/superpowers/plans/`.
 

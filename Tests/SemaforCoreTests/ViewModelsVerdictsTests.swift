@@ -77,38 +77,87 @@ struct ViewModelsVerdictsTests {
         #expect(section(verdict: verdict(.unknown)).chipColor == .grey)
     }
 
-    // MARK: - Sparklines
+    // MARK: - Metric tiles (value + fixed-domain sparkline, review feedback)
 
-    @Test func sparklinesNormalizeBySegmentMedian() {
-        // 22 identical samples ⇒ learned median equals the value ⇒ flat 1.0.
-        let recent = (0..<22).map { sample(offset: -Double($0) * 120) }
-        let model = section(recent: recent)
-        #expect(model.sparkTTFT.count == 22)
-        #expect(model.sparkTTFT.allSatisfy { abs($0 - 1.0) < 0.001 })
-        #expect(model.sparkTokPerSec.allSatisfy { abs($0 - 1.0) < 0.001 })
+    /// 22 uniform samples at tok/s 80 / ttft 2.0 ⇒ learned segment median;
+    /// `latestTok` optionally overrides the newest sample's throughput.
+    private func learnedSeries(latestTok: Double? = 80, latestTtft: Double? = 2.0) -> [ProbeSample] {
+        var recent = (1..<22).map { sample(offset: -Double($0) * 120) }  // 21 uniform @80/2.0
+        recent.append(sample(offset: -60, ttft: latestTtft, tokPerSec: latestTok))
+        return recent
     }
 
-    @Test func sparklinesExcludeNonOkAndStaleAndDecimate() {
+    @Test func tilesShowLatestValueAndLearnedUsual() {
+        let model = section(recent: learnedSeries(latestTok: 80))
+        #expect(model.tileTokPerSec?.valueText == "80 tok/s")
+        #expect(model.tileTokPerSec?.usualText == "usual 80")
+        #expect(model.tileTTFT?.valueText == "2.0 s")
+        #expect(model.tileTTFT?.usualText == "usual 2.0 s")
+    }
+
+    @Test func tileColorLadderFollowsDirectionalZ() {
+        // MAD collapses to 0 ⇒ MAD floor 2 for tok/s: z = (80 − v)/2.
+        let green = section(recent: learnedSeries(latestTok: 80))
+        #expect(green.tileTokPerSec?.color == .green)
+
+        let amber = section(recent: learnedSeries(latestTok: 73))  // z 3.5
+        #expect(amber.tileTokPerSec?.color == .amber)
+        #expect(amber.tileTokPerSec?.valueText == "73 tok/s")
+
+        let red = section(recent: learnedSeries(latestTok: 9))  // z 35.5
+        #expect(red.tileTokPerSec?.color == .red)
+
+        // ttft side: floor 0.25 ⇒ 21 s vs median 2 ⇒ z 76 red; fast ttft stays
+        // green (direction guard: low tok/s and HIGH ttft are the bad sides).
+        let ttftRed = section(recent: learnedSeries(latestTtft: 21))
+        #expect(ttftRed.tileTTFT?.color == .red)
+        let ttftFast = section(recent: learnedSeries(latestTtft: 0.1))
+        #expect(ttftFast.tileTTFT?.color == .green)
+        let tokFast = section(recent: learnedSeries(latestTok: 400))
+        #expect(tokFast.tileTokPerSec?.color == .green)
+    }
+
+    @Test func tilesUseAbsoluteDefaultsWhenUnlearned() {
+        let model = section(recent: [sample(offset: -60, ttft: 5, tokPerSec: 50)])
+        #expect(model.tileTokPerSec?.usualText == "usual 20")  // baselineDefaultTokPerSec
+        #expect(model.tileTokPerSec?.valueText == "50 tok/s")
+        #expect(model.tileTokPerSec?.color == .green)  // 50 > 20 ⇒ fast side
+        #expect(model.tileTTFT?.usualText == "usual 8.0 s")  // baselineDefaultTTFT
+        #expect(model.tileTTFT?.color == .green)  // 5 < 8 ⇒ fast side
+    }
+
+    @Test func tilesNilWithoutUsableSamples() {
+        let empty = section(recent: [])
+        #expect(empty.tileTTFT == nil)
+        #expect(empty.tileTokPerSec == nil)
+
+        let onlyTimeouts = section(recent: [
+            sample(offset: -60, ttft: nil, tokPerSec: nil, outcome: .timeout),
+        ])
+        #expect(onlyTimeouts.tileTTFT == nil)
+        #expect(onlyTimeouts.tileTokPerSec == nil)
+    }
+
+    @Test func tilesExcludeNonOkStaleAndDecimateSeries() {
         var recent: [ProbeSample] = (0..<60).map { sample(offset: -Double($0) * 600) }  // 10 h span
-        recent += [sample(offset: -60, ttft: nil, tokPerSec: nil, outcome: .timeout),
+        recent += [sample(offset: -61, ttft: nil, tokPerSec: nil, outcome: .timeout),
                    sample(offset: -30 * 3600)]  // outside 24 h
-        let usable = recent.filter {
-            $0.outcome == .ok && $0.ttft != nil && now.timeIntervalSince($0.timestamp) <= 24 * 3600
-        }.count
-        #expect(usable == 60)
         let model = section(recent: recent)
-        #expect(model.sparkTTFT.count <= 48)
-        #expect(model.sparkTTFT.count >= 24)
+        #expect(model.tileTTFT?.series.count ?? 0 <= 48)
+        #expect(model.tileTTFT?.series.count ?? 0 >= 24)
     }
 
-    @Test func sparklineSamplesMissingMetricDroppedPerMetric() {
-        let recent = [
-            sample(offset: -60, ttft: 2.0, tokPerSec: nil),
-            sample(offset: -120, ttft: nil, tokPerSec: 80),
-        ]
-        let model = section(recent: recent)
-        #expect(model.sparkTTFT.count == 1)
-        #expect(model.sparkTokPerSec.count == 1)
+    @Test func seriesIsFixedDomainNotAutoScaled() {
+        // Review complaint: auto-scaled squiggles look identical whatever the
+        // data; on a fixed 0…2×-median domain values clamp at 2 and a
+        // at-median series sits exactly at 1.
+        let flat = section(recent: learnedSeries(latestTok: 80))
+        #expect(flat.tileTokPerSec?.series.allSatisfy { abs($0 - 1.0) < 0.001 } == true)
+
+        let spike = section(recent: learnedSeries(latestTok: 400))  // 400/80 = 5 ⇒ clamp 2
+        #expect(spike.tileTokPerSec?.series.max() == 2.0)
+        let dip = section(recent: learnedSeries(latestTok: 20))  // 20/80 = 0.25
+        #expect(dip.tileTokPerSec?.series.min() == 0.25)
     }
 
     // MARK: - Measured caption and banner
