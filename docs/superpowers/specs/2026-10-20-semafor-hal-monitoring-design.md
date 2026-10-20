@@ -41,6 +41,33 @@ Rows are filtered in Swift: keep `role == "assistant"` and
 `providerID == "hal"` (no json1 dependency; a scan over the other providers'
 rows is cheap at one pass per tick).
 
+**Amendment 2026-10-20 — schema v2 (binding, supersedes the `message`-table
+reading above)**: OpenCode migrated session storage; the desktop app (the
+only writer since Sept 17) writes the `session_message` table
+(`id, session_id, type, seq, time_created, time_updated, data`), live-verified
+while this feature dogfoods. The legacy `message` table stays frozen — its
+already-ingested samples remain in the Semafor store and baseline pools, but
+the scanner now targets `session_message` only:
+
+```sql
+SELECT rowid, type, data FROM session_message WHERE rowid > :cursor ORDER BY rowid LIMIT 2000
+```
+
+Swift-side filters: keep rows whose **`type` column** == `"assistant"` **and**
+`data.model.providerID == "hal"` (providerID moved from top level into the
+`model` object: `{id, providerID, variant}`; `model.id` replaces `modelID`).
+Error rows carry `data.error = {type, message, status, response}` — decode
+**only** `type` and `status`; `message`/`response` are never decoded, stored,
+or printed (privacy §8 unchanged). Classification maps onto the §3.3 rules:
+`error.type == "aborted"` ⇒ invisible (user cancel); any other `error.type`
+(`provider.error`, `provider.transport`, `provider.invalid-request`, or
+unknown) ⇒ no sample, record `{code: status >= 400 ? status : 0, at:
+time.created/1000}`. `tokens` stay at `data.tokens.output`. Streaming-stop
+rule unchanged on `data.time.completed` absence (in-flight rows verified live:
+`created`+`streamed` set, `completed` missing). The scan state gains a
+`schemaVersion` field: loading a state file whose version is not 2 ⇒ reset
+cursor to 0 and clear recentErrors (one-off re-backfill from the new table).
+
 **Timestamp units**: `time.created`/`time.completed` are epoch **milliseconds**
 (verified 13-digit). Divide by 1000. Sanity gate: a derived duration outside
 `0.5 s … 3600 s` ⇒ `duration`/`tokensPerSecond` nil (a seconds-vs-ms
