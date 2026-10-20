@@ -116,57 +116,185 @@ public enum ProviderError: Error, Equatable, Sendable {
     case http(status: Int)
     case network
     case decoding(String)
-    case unimplemented
 }
 
-public enum ProbeMode: String, Codable, Equatable, Sendable {
-    case standard
-    case fast
-}
-
-public struct ProbeModel: Codable, Equatable, Sendable {
-    public let id: String
-    public let mode: ProbeMode
-
-    public init(id: String, mode: ProbeMode) {
-        self.id = id
-        self.mode = mode
-    }
-}
-
-public enum ProbeOutcome: Codable, Equatable, Sendable {
+public enum ProbeOutcome: String, Codable, Equatable, Sendable {
     case ok
     case timeout
-    case httpError(Int)
+    case streamFailure
     case authError
-    case network
 }
 
+/// One passive measurement derived from a provider's own session logs
+/// (spec §5.1/§6). Dates travel as ISO8601 strings like `UsageWindow`.
 public struct ProbeSample: Codable, Equatable, Sendable {
     public let provider: ProviderID
     public let model: String
-    public let mode: ProbeMode
-    public let ttft: TimeInterval
+    /// Dedupe key `"<fileName>#<requestRef|turnId>"` (spec §7).
+    public let sessionKey: String
+    public let ttft: TimeInterval?
+    public let duration: TimeInterval?
     public let tokensPerSecond: Double?
     public let outcome: ProbeOutcome
+    /// Request/turn start.
     public let timestamp: Date
 
     public init(
         provider: ProviderID,
         model: String,
-        mode: ProbeMode,
-        ttft: TimeInterval,
+        sessionKey: String,
+        ttft: TimeInterval?,
+        duration: TimeInterval?,
         tokensPerSecond: Double?,
         outcome: ProbeOutcome,
         timestamp: Date
     ) {
         self.provider = provider
         self.model = model
-        self.mode = mode
+        self.sessionKey = sessionKey
         self.ttft = ttft
+        self.duration = duration
         self.tokensPerSecond = tokensPerSecond
         self.outcome = outcome
         self.timestamp = timestamp
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case provider, model, sessionKey, ttft, duration, tokensPerSecond, outcome, timestamp
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try container.decode(ProviderID.self, forKey: .provider)
+        model = try container.decode(String.self, forKey: .model)
+        sessionKey = try container.decode(String.self, forKey: .sessionKey)
+        ttft = try container.decodeIfPresent(Double.self, forKey: .ttft)
+        duration = try container.decodeIfPresent(Double.self, forKey: .duration)
+        tokensPerSecond = try container.decodeIfPresent(Double.self, forKey: .tokensPerSecond)
+        outcome = try container.decode(ProbeOutcome.self, forKey: .outcome)
+        let text = try container.decode(String.self, forKey: .timestamp)
+        guard let date = StoreDateCoding.parse(text) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .timestamp, in: container, debugDescription: "unparseable date: \(text)")
+        }
+        timestamp = date
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(provider, forKey: .provider)
+        try container.encode(model, forKey: .model)
+        try container.encode(sessionKey, forKey: .sessionKey)
+        try container.encodeIfPresent(ttft, forKey: .ttft)
+        try container.encodeIfPresent(duration, forKey: .duration)
+        try container.encodeIfPresent(tokensPerSecond, forKey: .tokensPerSecond)
+        try container.encode(outcome, forKey: .outcome)
+        try container.encode(StoreDateCoding.render(timestamp), forKey: .timestamp)
+    }
+}
+
+/// Verdict rank order doubles as priority (spec §8.2).
+public enum ProviderState: Int, Codable, Comparable, Sendable {
+    case ok = 0
+    case busy
+    case degraded
+    case crawling
+    case limited
+    case unknown
+
+    public static func < (lhs: ProviderState, rhs: ProviderState) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+/// One rule that fired inside a verdict, carrying the numbers (§8.2: the
+/// popover always shows *why*).
+public struct VerdictReason: Codable, Equatable, Sendable {
+    public let code: String
+    public let detail: String
+
+    public init(code: String, detail: String) {
+        self.code = code
+        self.detail = detail
+    }
+}
+
+public struct Verdict: Codable, Equatable, Sendable {
+    public let provider: ProviderID
+    public let state: ProviderState
+    public let reasons: [VerdictReason]
+    public let computedAt: Date
+
+    public init(
+        provider: ProviderID,
+        state: ProviderState,
+        reasons: [VerdictReason],
+        computedAt: Date
+    ) {
+        self.provider = provider
+        self.state = state
+        self.reasons = reasons
+        self.computedAt = computedAt
+    }
+}
+
+/// One HTTP control-probe outcome (spec §7).
+public struct ControlSample: Codable, Equatable, Sendable {
+    public let provider: ProviderID
+    /// nil = the request failed or returned >= 400.
+    public let latency: TimeInterval?
+    public let timestamp: Date
+
+    public init(provider: ProviderID, latency: TimeInterval?, timestamp: Date) {
+        self.provider = provider
+        self.latency = latency
+        self.timestamp = timestamp
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case provider, latency, timestamp
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try container.decode(ProviderID.self, forKey: .provider)
+        latency = try container.decodeIfPresent(Double.self, forKey: .latency)
+        let text = try container.decode(String.self, forKey: .timestamp)
+        guard let date = StoreDateCoding.parse(text) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .timestamp, in: container, debugDescription: "unparseable date: \(text)")
+        }
+        timestamp = date
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(provider, forKey: .provider)
+        try container.encodeIfPresent(latency, forKey: .latency)
+        try container.encode(StoreDateCoding.render(timestamp), forKey: .timestamp)
+    }
+}
+
+/// A capacity-event marker sniffed from CLI session logs. Carried in M3
+/// (verdict inputs); emitted by the M4 capacity extractor (spec §5).
+public struct CapacityEvent: Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, Equatable, Sendable {
+        case rateLimit429
+        case planLimit
+        case overloaded
+        case stall
+    }
+
+    public let provider: ProviderID
+    public let kind: Kind
+    public let detail: String?
+    public let at: Date
+
+    public init(provider: ProviderID, kind: Kind, detail: String?, at: Date) {
+        self.provider = provider
+        self.kind = kind
+        self.detail = detail
+        self.at = at
     }
 }
 

@@ -104,7 +104,7 @@ public struct ProviderSectionModel: Equatable, Sendable {
     static func statusLine(for snapshot: ProviderSnapshot) -> String {
         let cli = snapshot.providerID == .claude ? "claude" : "codex"
         switch snapshot.lastError {
-        case nil, .unimplemented:
+        case nil:
             return ""
         case .auth(.missingCredentials):
             return "Not signed in — run `\(cli)` once"

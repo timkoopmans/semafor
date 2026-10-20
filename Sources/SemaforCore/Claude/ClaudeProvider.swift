@@ -51,10 +51,6 @@ public struct ClaudeProvider: Provider {
         }
     }
 
-    public func probe(_ model: ProbeModel) async throws -> ProbeSample {
-        throw ProviderError.unimplemented
-    }
-
     public func statusPage() async throws -> StatusPageState {
         .unknown
     }

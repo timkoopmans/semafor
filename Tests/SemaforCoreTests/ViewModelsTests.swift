@@ -113,7 +113,6 @@ struct ProviderSectionModelTests {
         #expect(line(.claude, .network) == "Network unreachable")
         #expect(line(.claude, .http(status: 503)) == "Provider API error (503)")
         #expect(line(.claude, .decoding("junk")) == "Unexpected provider response")
-        #expect(line(.claude, .unimplemented) == "")
     }
 
     @Test func headlinePrefersLongestWindow() {

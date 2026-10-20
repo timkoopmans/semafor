@@ -81,24 +81,80 @@ public actor SampleStore: LimitsWriting {
     public func limits(provider: ProviderID, since: Date) -> [UsageWindow] {
         var windows: [UsageWindow] = []
         var corruptLines = 0
-        for url in fileURLs(type: "limits") {
+        for record in readRecords(type: "limits", corrupt: &corruptLines) {
+            if case let .limits(recordProvider, recordWindows, fetchedAt) = record,
+               recordProvider == provider, fetchedAt >= since
+            {
+                windows.append(contentsOf: recordWindows)
+            }
+        }
+        lastReadCorruptLineCount = corruptLines
+        return windows
+    }
+
+    /// Probe samples for a provider (optionally one model), ascending by
+    /// timestamp. Duplicate `sessionKey` lines collapse, last one wins
+    /// (spec §7 dedupe; covers backfill after state loss).
+    public func probeSamples(
+        provider: ProviderID, model: String? = nil, since: Date
+    ) -> [ProbeSample] {
+        var corruptLines = 0
+        var byKey: [String: ProbeSample] = [:]
+        for record in readRecords(type: "probes", corrupt: &corruptLines) {
+            guard case .probe(let sample) = record, sample.provider == provider,
+                  sample.timestamp >= since,
+                  model == nil || sample.model == model
+            else { continue }
+            byKey[sample.sessionKey] = sample  // later lines win
+        }
+        lastReadCorruptLineCount = corruptLines
+        return byKey.values.sorted { $0.timestamp < $1.timestamp }
+    }
+
+    public func controlSamples(since: Date) -> [ControlSample] {
+        var corruptLines = 0
+        var byKey: [String: ControlSample] = [:]
+        for record in readRecords(type: "controls", corrupt: &corruptLines) {
+            guard case .control(let sample) = record, sample.timestamp >= since else { continue }
+            byKey["\(sample.provider.rawValue)|\(sample.timestamp.timeIntervalSince1970)"] = sample
+        }
+        lastReadCorruptLineCount = corruptLines
+        return byKey.values.sorted { lhs, rhs in
+            (lhs.timestamp, lhs.provider.rawValue) < (rhs.timestamp, rhs.provider.rawValue)
+        }
+    }
+
+    public func latestStatus(provider: ProviderID) -> StatusPageState? {
+        var corruptLines = 0
+        var latest: (Date, StatusPageState)?
+        for record in readRecords(type: "status", corrupt: &corruptLines) {
+            guard case .status(let recordProvider, let state, let fetchedAt) = record,
+                  recordProvider == provider else { continue }
+            if latest == nil || fetchedAt >= latest!.0 { latest = (fetchedAt, state) }
+        }
+        lastReadCorruptLineCount = corruptLines
+        return latest?.1
+    }
+
+    // MARK: - Reading
+
+    /// Decodes every line of every file for a record type; callers pattern-match
+    /// the variants they want. Unknown/torn lines increment `corrupt` (never throw).
+    private func readRecords(type: String, corrupt: inout Int) -> [StoreRecord] {
+        var records: [StoreRecord] = []
+        for url in fileURLs(type: type) {
             guard let contents = try? String(contentsOf: url, encoding: .utf8) else { continue }
             for rawLine in contents.split(separator: "\n", omittingEmptySubsequences: false) {
                 let line = rawLine.trimmingCharacters(in: .whitespaces)
                 if line.isEmpty { continue }  // tolerated blank line
                 guard let record = try? decoder.decode(StoreRecord.self, from: Data(line.utf8)) else {
-                    corruptLines += 1  // e.g. a truncated final line from a crash
+                    corrupt += 1  // e.g. a truncated final line from a crash
                     continue
                 }
-                if case let .limits(recordProvider, recordWindows, fetchedAt) = record,
-                   recordProvider == provider, fetchedAt >= since
-                {
-                    windows.append(contentsOf: recordWindows)
-                }
+                records.append(record)
             }
         }
-        lastReadCorruptLineCount = corruptLines
-        return windows
+        return records
     }
 
     // MARK: - Rotation
@@ -137,6 +193,9 @@ public actor SampleStore: LimitsWriting {
     private static func type(of record: StoreRecord) -> String {
         switch record {
         case .limits: return "limits"
+        case .probe: return "probes"
+        case .control: return "controls"
+        case .status: return "status"
         }
     }
 

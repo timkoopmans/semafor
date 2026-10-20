@@ -49,10 +49,6 @@ private actor ScriptedProvider: Provider {
 
     nonisolated var sessionLogPaths: [URL] { [] }
 
-    func probe(_ model: ProbeModel) async throws -> ProbeSample {
-        throw ProviderError.unimplemented
-    }
-
     func statusPage() async throws -> StatusPageState { .unknown }
 }
 
@@ -170,14 +166,15 @@ struct PollSchedulerTests {
         await scheduler.start()
         try await waitUntil("record written") { await writer.records.count == 1 }
         let record = try #require(await writer.records.first)
-        switch record {
-        case .limits(let id, let windows, let fetchedAt):
-            #expect(id == .claude)
-            #expect(windows.count == 1)
-            #expect(windows.first?.usedPercent == 42)
-            let snapshotFetchedAt = await scheduler.snapshots()[.claude]?.fetchedAt
-            #expect(fetchedAt == snapshotFetchedAt)
+        guard case .limits(let id, let windows, let fetchedAt) = record else {
+            Issue.record("expected a limits record")
+            return
         }
+        #expect(id == .claude)
+        #expect(windows.count == 1)
+        #expect(windows.first?.usedPercent == 42)
+        let snapshotFetchedAt = await scheduler.snapshots()[.claude]?.fetchedAt
+        #expect(fetchedAt == snapshotFetchedAt)
     }
 
     @Test func staleAfterThreeIntervalsWithoutSuccess() async throws {
