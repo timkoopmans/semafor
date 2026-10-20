@@ -8,14 +8,20 @@ public struct HalErrorRecord: Codable, Equatable, Sendable {
 
 public actor HalScanner {
     public struct ScanState: Codable, Equatable, Sendable {
+        /// Scan state format version. 2 = OpenCode `session_message` (spec §3.1
+        /// amendment); loading any other version resets (legacy-table cursors
+        /// are meaningless for the new table ⇒ one-off re-backfill).
+        public static let currentSchemaVersion = 2
+
         public var cursor: Int64
         public var lastScan: Date?
         public var recentErrors: [HalErrorRecord]
-        public init(cursor: Int64 = 0, lastScan: Date? = nil, recentErrors: [HalErrorRecord] = []) {
-            self.cursor = cursor; self.lastScan = lastScan; self.recentErrors = recentErrors
+        public var schemaVersion: Int
+        public init(cursor: Int64 = 0, lastScan: Date? = nil, recentErrors: [HalErrorRecord] = [], schemaVersion: Int = ScanState.currentSchemaVersion) {
+            self.cursor = cursor; self.lastScan = lastScan; self.recentErrors = recentErrors; self.schemaVersion = schemaVersion
         }
 
-        private enum CodingKeys: String, CodingKey { case cursor, lastScan, recentErrors }
+        private enum CodingKeys: String, CodingKey { case cursor, lastScan, recentErrors, schemaVersion }
 
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -27,6 +33,7 @@ public actor HalScanner {
                 lastScan = date
             } else { lastScan = nil }
             recentErrors = try container.decode([HalErrorRecord].self, forKey: .recentErrors)
+            schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 0
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -34,23 +41,29 @@ public actor HalScanner {
             try container.encode(cursor, forKey: .cursor)
             try container.encodeIfPresent(lastScan.map(StoreDateCoding.render), forKey: .lastScan)
             try container.encode(recentErrors, forKey: .recentErrors)
+            try container.encode(schemaVersion, forKey: .schemaVersion)
         }
     }
 
+    /// Schema v2 `session_message.data` DTO (spec §3.1 amendment). `type`
+    /// lives on the row column, not here. Privacy §8: `ErrorInfo` decodes
+    /// only `type` + `status` — `message`/`response` are never decoded into
+    /// any type, stored, or printed.
     private struct MessageData: Decodable {
+        struct Model: Decodable { let id: String?; let providerID: String? }
         struct Tokens: Decodable { let output: Int? }
         struct Time: Decodable { let created: Int64?; let completed: Int64? }
-        let role: String?; let providerID: String?; let modelID: String?
-        let tokens: Tokens?; let time: Time?; let error: ErrorInfo?
-        struct ErrorInfo: Decodable { let name: String?; let data: ErrorPayload? }
-        struct ErrorPayload: Decodable {
-            let statusCode: Int?
-            private enum CodingKeys: String, CodingKey { case statusCode }
+        struct ErrorInfo: Decodable {
+            let type: String?
+            let status: Int?
+            private enum CodingKeys: String, CodingKey { case type, status }
             init(from decoder: Decoder) throws {
                 let container = try decoder.container(keyedBy: CodingKeys.self)
-                statusCode = try? container.decode(Int.self, forKey: .statusCode)
+                type = try? container.decode(String.self, forKey: .type)
+                status = try? container.decode(Int.self, forKey: .status)
             }
         }
+        let model: Model?; let tokens: Tokens?; let time: Time?; let error: ErrorInfo?
     }
 
     private let dbPath: String
@@ -63,8 +76,13 @@ public actor HalScanner {
 
     public init(dbPath: String, settings: AppSettings, store: SampleStore, stateURL: URL) {
         self.dbPath = dbPath; self.settings = settings; self.store = store; self.stateURL = stateURL
-        if let data = try? Data(contentsOf: stateURL), let decoded = try? JSONDecoder().decode(ScanState.self, from: data) { scanState = decoded }
-        else { scanState = ScanState() }
+        if let data = try? Data(contentsOf: stateURL),
+           let decoded = try? JSONDecoder().decode(ScanState.self, from: data),
+           decoded.schemaVersion == ScanState.currentSchemaVersion {
+            scanState = decoded
+        } else {
+            scanState = ScanState()
+        }
     }
 
     public func state() -> ScanState { scanState }
@@ -82,28 +100,28 @@ public actor HalScanner {
         scanning = true
         defer { scanning = false }
         let db = try OpenCodeDb(path: dbPath)
-        let rows = try db.rows(after: scanState.cursor, limit: 1000)
+        let rows = try db.sessionMessages(after: scanState.cursor, limit: 1000)
         var count = 0
         for row in rows {
             guard let decoded = try? JSONDecoder().decode(MessageData.self, from: Data(row.data.utf8)) else { scanState.cursor = row.rowid; continue }
-            if decoded.role == "assistant", decoded.providerID == "hal", decoded.error == nil, decoded.time?.completed == nil { break }
+            let isHalAssistant = row.type == "assistant" && decoded.model?.providerID == "hal"
+            if isHalAssistant, decoded.error == nil, decoded.time?.completed == nil { break }
             scanState.cursor = row.rowid
+            guard isHalAssistant else { continue }
             if let error = decoded.error {
-                guard decoded.role == "assistant", decoded.providerID == "hal" else { continue }
-                if error.name != "MessageAbortedError", let created = decoded.time?.created {
-                    let statusCode = error.data?.statusCode
-                    if statusCode == nil || statusCode! >= 400 {
-                        scanState.recentErrors.append(HalErrorRecord(code: statusCode ?? 0, at: Date(timeIntervalSince1970: Double(created) / 1000)))
-                    }
+                // "aborted" is a user cancel, not a server fault (§3.3);
+                // every other type — known or unknown — records code + time only.
+                if error.type != "aborted", let created = decoded.time?.created {
+                    let status = error.status
+                    scanState.recentErrors.append(HalErrorRecord(code: status != nil && status! >= 400 ? status! : 0, at: Date(timeIntervalSince1970: Double(created) / 1000)))
                 }
                 continue
             }
-            guard decoded.role == "assistant", decoded.providerID == "hal", decoded.error == nil,
-                  let created = decoded.time?.created, let completed = decoded.time?.completed else { continue }
+            guard let created = decoded.time?.created, let completed = decoded.time?.completed else { continue }
             let output = decoded.tokens?.output
             let duration = Double(completed - created) / 1000
             let validDuration = (0.5...3600).contains(duration) ? duration : nil
-            let sample = ProbeSample(provider: .hal, model: decoded.modelID ?? "hal-unknown", sessionKey: "opencode.db#\(row.rowid)", ttft: nil, duration: validDuration, tokensPerSecond: validDuration.flatMap { duration in output.map { Double($0) / duration } }, tokens: output.flatMap { $0 >= 1 ? $0 : nil }, outcome: .ok, timestamp: Date(timeIntervalSince1970: Double(created) / 1000))
+            let sample = ProbeSample(provider: .hal, model: decoded.model?.id ?? "hal-unknown", sessionKey: "session_message#\(row.rowid)", ttft: nil, duration: validDuration, tokensPerSecond: validDuration.flatMap { duration in output.map { Double($0) / duration } }, tokens: output.flatMap { $0 >= 1 ? $0 : nil }, outcome: .ok, timestamp: Date(timeIntervalSince1970: Double(created) / 1000))
             try await store.append(.probe(sample)); count += 1
         }
         let cutoff = now.addingTimeInterval(-7 * 24 * 3600)

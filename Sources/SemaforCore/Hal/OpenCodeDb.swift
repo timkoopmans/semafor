@@ -2,8 +2,10 @@ import CSQLite
 import Foundation
 
 public final class OpenCodeDb: @unchecked Sendable {
-    public struct Row: Sendable {
+    /// One `session_message` row (schema v2, spec §3.1 amendment).
+    public struct SessionMessageRow: Sendable {
         public let rowid: Int64
+        public let type: String
         public let data: String
     }
 
@@ -38,10 +40,13 @@ public final class OpenCodeDb: @unchecked Sendable {
 
     deinit { close() }
 
-    public func rows(after cursor: Int64, limit: Int) throws -> [Row] {
+    /// Dumb fetch for the scanner's tick (spec §3.1 amendment SQL). Row-level
+    /// filtering/JSON parsing lives in `HalScanner`; NULL `type` or `data`
+    /// throws rather than being conflated with empty text.
+    public func sessionMessages(after cursor: Int64, limit: Int) throws -> [SessionMessageRow] {
         guard let handle else { throw DbError.queryFailed(status: Int32(SQLITE_MISUSE)) }
         var statement: OpaquePointer?
-        let sql = "SELECT rowid, data FROM message WHERE rowid > ? ORDER BY rowid LIMIT ?"
+        let sql = "SELECT rowid, type, data FROM session_message WHERE rowid > ? ORDER BY rowid LIMIT ?"
         let prepareStatus = sqlite3_prepare_v2(handle, sql, -1, &statement, nil)
         guard prepareStatus == SQLITE_OK, let statement else {
             throw DbError.queryFailed(status: Int32(prepareStatus))
@@ -52,19 +57,22 @@ public final class OpenCodeDb: @unchecked Sendable {
         if status == SQLITE_OK { status = sqlite3_bind_int(statement, 2, Int32(clamping: limit)) }
         guard status == SQLITE_OK else { throw DbError.queryFailed(status: Int32(status)) }
 
-        var result: [Row] = []
+        func text(_ index: Int32) -> String? {
+            guard let pointer = sqlite3_column_text(statement, index) else { return nil }
+            let byteCount = Int(sqlite3_column_bytes(statement, index))
+            return String(decoding: UnsafeBufferPointer(start: pointer, count: byteCount), as: UTF8.self)
+        }
+
+        var result: [SessionMessageRow] = []
         while true {
             status = sqlite3_step(statement)
             if status == SQLITE_DONE { return result }
             guard status == SQLITE_ROW else { throw DbError.queryFailed(status: Int32(status)) }
             let rowid = sqlite3_column_int64(statement, 0)
-            // `Row.data` is non-optional, so reject SQL NULL rather than conflating it with empty text.
-            guard let text = sqlite3_column_text(statement, 1) else {
+            guard let type = text(1), let data = text(2) else {
                 throw DbError.queryFailed(status: Int32(SQLITE_MISMATCH))
             }
-            let byteCount = Int(sqlite3_column_bytes(statement, 1))
-            let data = String(decoding: UnsafeBufferPointer(start: text, count: byteCount), as: UTF8.self)
-            result.append(Row(rowid: rowid, data: data))
+            result.append(SessionMessageRow(rowid: rowid, type: type, data: data))
         }
     }
 

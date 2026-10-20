@@ -10,6 +10,7 @@ import Testing
             .path
     }
 
+    /// Schema v2 (spec §3.1 amendment): the desktop app's live table.
     private func makeDatabase() throws -> (String, OpenCodeDb) {
         let path = databasePath()
         try FileManager.default.createDirectory(
@@ -17,8 +18,8 @@ import Testing
             withIntermediateDirectories: true
         )
         let db = try OpenCodeDb(path: path, readOnly: false)
-        try db.exec("CREATE TABLE message (id text primary key, session_id text, time_created int, time_updated int, data text)")
-        try db.exec("INSERT INTO message (id, data) VALUES ('a', 'first'), ('b', 'second'), ('c', 'third')")
+        try db.exec("CREATE TABLE session_message (id text primary key, session_id text, type text, seq int, time_created int, time_updated int, data text)")
+        try db.exec("INSERT INTO session_message (id, type, data) VALUES ('a', 'assistant', 'first'), ('b', 'user', 'second'), ('c', 'assistant', 'third')")
         return (path, db)
     }
 
@@ -29,11 +30,12 @@ import Testing
             try? FileManager.default.removeItem(at: URL(fileURLWithPath: path).deletingLastPathComponent())
         }
 
-        let all = try db.rows(after: -1, limit: 10)
+        let all = try db.sessionMessages(after: -1, limit: 10)
         #expect(all.map(\.rowid) == [1, 2, 3])
+        #expect(all.map(\.type) == ["assistant", "user", "assistant"])
         #expect(all.map(\.data) == ["first", "second", "third"])
-        #expect(try db.rows(after: -1, limit: 2).map(\.rowid) == [1, 2])
-        #expect(try db.rows(after: 2, limit: 10).map(\.rowid) == [3])
+        #expect(try db.sessionMessages(after: -1, limit: 2).map(\.rowid) == [1, 2])
+        #expect(try db.sessionMessages(after: 2, limit: 10).map(\.rowid) == [3])
     }
 
     @Test func missingPathThrowsOpenFailed() {
@@ -67,7 +69,7 @@ import Testing
         defer { db.close() }
 
         #expect(throws: OpenCodeDb.DbError.self) {
-            try db.exec("INSERT INTO message (id, data) VALUES ('d', 'fourth')")
+            try db.exec("INSERT INTO session_message (id, type, data) VALUES ('d', 'assistant', 'fourth')")
         }
     }
 
@@ -77,9 +79,10 @@ import Testing
             db.close()
             try? FileManager.default.removeItem(at: URL(fileURLWithPath: path).deletingLastPathComponent())
         }
-        try db.exec("INSERT INTO message (id, data) VALUES ('nul', CAST(X'610062' AS TEXT))")
+        try db.exec("INSERT INTO session_message (id, type, data) VALUES ('nul', 'assistant', CAST(X'610062' AS TEXT))")
 
-        let row = try #require(db.rows(after: 3, limit: 1).first)
+        let row = try #require(db.sessionMessages(after: 3, limit: 1).first)
+        #expect(row.type == "assistant")
         #expect(row.data == "a\0b")
     }
 
@@ -89,10 +92,23 @@ import Testing
             db.close()
             try? FileManager.default.removeItem(at: URL(fileURLWithPath: path).deletingLastPathComponent())
         }
-        try db.exec("INSERT INTO message (id, data) VALUES ('null', NULL)")
+        try db.exec("INSERT INTO session_message (id, type, data) VALUES ('null', 'assistant', NULL)")
 
         #expect(throws: OpenCodeDb.DbError.self) {
-            try db.rows(after: 3, limit: 1)
+            try db.sessionMessages(after: 3, limit: 1)
+        }
+    }
+
+    @Test func rowsRejectNullType() throws {
+        let (path, db) = try makeDatabase()
+        defer {
+            db.close()
+            try? FileManager.default.removeItem(at: URL(fileURLWithPath: path).deletingLastPathComponent())
+        }
+        try db.exec("INSERT INTO session_message (id, type, data) VALUES ('nulltype', NULL, 'x')")
+
+        #expect(throws: OpenCodeDb.DbError.self) {
+            try db.sessionMessages(after: 3, limit: 1)
         }
     }
 }
