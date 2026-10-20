@@ -43,21 +43,40 @@ struct CodexLogExtractorTests {
         #expect(healthy.provider == .codex)
         #expect(healthy.model == "gpt-6-astra")  // from session_meta
         #expect(healthy.timestamp == date("2026-10-20T02:00:45.567Z"))
-        #expect(abs(healthy.ttft! - 1.933) < 0.001)  // first response_item − start
+        #expect(abs(healthy.ttft! - 1.933) < 0.001)  // first MODEL output (reasoning) − start, not the user-message echo at +0.017
         #expect(abs(healthy.duration! - 9.433) < 0.001)  // task_complete − start
         // Accepted burst only: 100 tokens over the one adjacent 5 s pair.
         #expect(healthy.tokensPerSecond == 20)
         #expect(healthy.tokens == 100)  // accepted-burst total, not rate×duration
     }
 
-    @Test func toolCallTurnHasNoTTFTButKeepsThroughput() throws {
+    @Test func toolCallTurnMeasuresTimeToFirstOutputNotNilledOut() throws {
         let samples = try drainFixture()
         let byKey = Dictionary(uniqueKeysWithValues: samples.map { ($0.sessionKey, $0) })
         let tools = try #require(byKey[fixtureName + "#turn-tools"])
-        #expect(tools.ttft == nil)  // function_call seen ⇒ TTFT proxy invalid
+        // First model output (reasoning at +2 s) stands even on tool turns:
+        // time-to-first-output is a valid degradation signal. The user-message
+        // echo at +0.017 s and the tool OUTPUT lines must not be used.
+        #expect(tools.ttft == 2.0)
         #expect(tools.duration == 14.0)
         #expect(tools.tokensPerSecond == 10)  // 50 tokens / 5 s
         #expect(tools.tokens == 50)
+    }
+
+    @Test func turnStartUserEchoIsNeverFirstToken() throws {
+        // Regression: real Codex rollouts log the prompt echo ~17 ms after
+        // task_started; counting it made every Codex ttft read ~0.0 s.
+        var extractor = CodexLogExtractor()
+        let url = URL(fileURLWithPath: "/f/rollout-echo.jsonl")
+        func feed(_ text: String) { extractor.ingest(TailedLine(url: url, text: text)) }
+        feed(#"{"timestamp":"2026-10-20T05:10:40.181Z","type":"event_msg","payload":{"type":"task_started","turn_attribution":{"turn_id":"echo"}}}"#)
+        feed(#"{"timestamp":"2026-10-20T05:10:40.198Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}}"#)
+        feed(#"{"timestamp":"2026-10-20T05:10:40.199Z","type":"event_msg","payload":{"type":"item_completed"}}"#)
+        feed(#"{"timestamp":"2026-10-20T05:10:45.900Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}}"#)
+        feed(#"{"timestamp":"2026-10-20T05:10:45.920Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"echo"}}"#)
+        let samples = extractor.finish(now: date("2026-10-20T12:00:00Z"))
+        let echo = try #require(samples.first)
+        #expect(abs(echo.ttft! - 5.719) < 0.001)  // assistant item − start, not the echo
     }
 
     @Test func idleGapIsBurstFilteredNotCrawl() throws {

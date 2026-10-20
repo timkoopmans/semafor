@@ -66,15 +66,13 @@ public struct BaselineEngine: Sendable {
 
     /// Medians over usable samples matching `key`: `.ok` only, not future,
     /// ttft/token values present per metric. Under `baselineMinSamples` the
-    /// metric compares against the absolute default instead.
+    /// segment relaxes instead of giving up: bucket → weekday split → both
+    /// (never model or provider), so a quiet 6-hour bucket borrows the
+    /// neighbour's history rather than printing the absolute default as if
+    /// it were learned. Only a genuinely cold provider×model still falls back.
     public func baseline(for key: BaselineKey, samples: [ProbeSample], now: Date) -> BaselineSet {
-        let matching = samples.filter { sample in
-            sample.outcome == .ok
-                && sample.timestamp <= now
-                && self.key(at: sample.timestamp, provider: sample.provider, model: sample.model) == key
-        }
-        let ttftValues = matching.compactMap(\.ttft)
-        let rateValues = matching.compactMap(\.tokensPerSecond)
+        let ttftValues = relaxedValues(key, samples: samples, now: now, value: \.ttft)
+        let rateValues = relaxedValues(key, samples: samples, now: now, value: \.tokensPerSecond)
 
         let ttftLearned = ttftValues.count >= thresholds.baselineMinSamples
         let rateLearned = rateValues.count >= thresholds.baselineMinSamples
@@ -82,6 +80,31 @@ public struct BaselineEngine: Sendable {
             ttft: metricBaseline(values: ttftValues, fallbackMedian: thresholds.baselineDefaultTTFT),
             tokPerSec: metricBaseline(values: rateValues, fallbackMedian: thresholds.baselineDefaultTokPerSec),
             learned: ttftLearned && rateLearned)
+    }
+
+    /// First relaxation level with enough samples; else the fully relaxed
+    /// values (count stays honest — `metricBaseline` applies the default).
+    private func relaxedValues(
+        _ key: BaselineKey, samples: [ProbeSample], now: Date,
+        value: KeyPath<ProbeSample, Double?>
+    ) -> [Double] {
+        let ladder: [(ignoreBucket: Bool, ignoreWeekend: Bool)] =
+            [(false, false), (true, false), (false, true), (true, true)]
+        var fullyRelaxed: [Double] = []
+        for level in ladder {
+            let values = samples.compactMap { sample -> Double? in
+                guard sample.outcome == .ok, sample.timestamp <= now,
+                      sample.provider == key.provider, sample.model == key.model,
+                      level.ignoreBucket || self.key(at: sample.timestamp, provider: sample.provider, model: sample.model).bucket == key.bucket,
+                      level.ignoreWeekend || self.key(at: sample.timestamp, provider: sample.provider, model: sample.model).weekend == key.weekend,
+                      let v = sample[keyPath: value]
+                else { return nil }
+                return v
+            }
+            if values.count >= thresholds.baselineMinSamples { return values }
+            fullyRelaxed = values
+        }
+        return fullyRelaxed
     }
 
     /// Robust z-score; the floor keeps it finite when MAD is 0 (spec §8.1).

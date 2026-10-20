@@ -105,3 +105,18 @@ dependencies, macOS 14+.
 - Footer: live per-second poll counter ("poll 37 s ago", own TimelineView so
   it ticks between UI rebuilds); "Test now" renamed "Refresh"; the counter
   can no longer be truncated by the buttons.
+## 0.2.3 — honest "usual": baselines and Codex ttft fixed
+
+- Tiles no longer print the settings defaults as learned baselines. The
+  baseline pool widens from 24 h to the store's full history per provider,
+  and a segment that is short of baselineMinSamples now relaxes bucket →
+  weekday-split → both before falling back (never across model/provider).
+  Root cause of "usual 20 / usual 8.0 s": the current 6-hour bucket was
+  empty in the evening, so both providers silently compared to defaults.
+- Codex ttft now anchors on the first MODEL output (reasoning, assistant
+  message, tool call). The CLI logs the prompt echo ~17 ms after
+  task_started; the old "first response_item" proxy read ~0.0 s for every
+  turn. Tool-call turns keep a ttft now (time-to-first-output is a valid
+  degradation signal); turns with no model output stay nil.
+- BaselineEngine relaxation tests incl. model/provider cross-contamination
+  guard; fixture grew the real-world user-echo line. 186 tests.

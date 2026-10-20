@@ -144,15 +144,22 @@ public struct ProviderSectionModel: Equatable, Sendable {
                 && $0.timestamp <= now
                 && now.timeIntervalSince($0.timestamp) <= 24 * 3600
         }
+        // Baseline pool: the store's whole window for this provider (same
+        // history the verdict engine uses). Pooling only the last 24 h
+        // starved the 6-hour segments on any quiet stretch and the tile then
+        // printed the settings defaults as if they were learned (dogfood bug).
+        let history = recentSamples.filter {
+            $0.provider == snapshot.providerID && $0.outcome == .ok && $0.timestamp <= now
+        }
         let baseline = BaselineEngine(thresholds: settings.thresholds)
         let thresholds = settings.thresholds
         tileTTFT = Self.metricTile(
-            usable, value: \.ttft, now: now, provider: snapshot.providerID,
-            baseline: baseline, thresholds: thresholds,
+            usable, baselinePool: history, value: \.ttft, now: now,
+            provider: snapshot.providerID, baseline: baseline, thresholds: thresholds,
             fallbackMedian: settings.baselineDefaultTTFT, higherIsWorse: true)
         tileTokPerSec = Self.metricTile(
-            usable, value: \.tokensPerSecond, now: now, provider: snapshot.providerID,
-            baseline: baseline, thresholds: thresholds,
+            usable, baselinePool: history, value: \.tokensPerSecond, now: now,
+            provider: snapshot.providerID, baseline: baseline, thresholds: thresholds,
             fallbackMedian: settings.baselineDefaultTokPerSec, higherIsWorse: false)
 
         let strip = Self.tokenStrip(
@@ -207,7 +214,8 @@ public struct ProviderSectionModel: Equatable, Sendable {
     /// (÷ each sample's model median) and clamped to the tile's fixed
     /// 0…2×-median drawing domain, so height always means "vs usual".
     private static func metricTile(
-        _ samples: [ProbeSample], value: KeyPath<ProbeSample, Double?>, now: Date,
+        _ samples: [ProbeSample], baselinePool: [ProbeSample],
+        value: KeyPath<ProbeSample, Double?>, now: Date,
         provider: ProviderID, baseline: BaselineEngine, thresholds: Thresholds,
         fallbackMedian: Double, higherIsWorse: Bool
     ) -> MetricTileModel? {
@@ -217,7 +225,7 @@ public struct ProviderSectionModel: Equatable, Sendable {
             return nil
         }
         let key = baseline.key(at: now, provider: provider, model: newest.model)
-        let set = baseline.baseline(for: key, samples: samples, now: now)
+        let set = baseline.baseline(for: key, samples: baselinePool, now: now)
         let metric = higherIsWorse ? set.ttft : set.tokPerSec
         let median = metric.median > 0 ? metric.median : fallbackMedian
         let floor = higherIsWorse ? thresholds.madFloorTTFT : thresholds.madFloorTokPerSec
@@ -242,7 +250,7 @@ public struct ProviderSectionModel: Equatable, Sendable {
         }
 
         let series = Self.sparkValues(
-            samples, value: value, now: now, provider: provider,
+            samples, pool: baselinePool, value: value, now: now, provider: provider,
             baseline: baseline, fallbackMedian: fallbackMedian
         ).map { min($0, 2) }
 
@@ -263,7 +271,8 @@ public struct ProviderSectionModel: Equatable, Sendable {
     /// is simply "twice as slow as usual" draws a visible rise regardless of
     /// absolute scale (spec §9 sparklines).
     private static func sparkValues(
-        _ samples: [ProbeSample], value: KeyPath<ProbeSample, Double?>,
+        _ samples: [ProbeSample], pool: [ProbeSample],
+        value: KeyPath<ProbeSample, Double?>,
         now: Date, provider: ProviderID, baseline: BaselineEngine,
         fallbackMedian: Double
     ) -> [Double] {
@@ -276,7 +285,7 @@ public struct ProviderSectionModel: Equatable, Sendable {
                 median = cached
             } else {
                 let key = baseline.key(at: now, provider: provider, model: sample.model)
-                let set = baseline.baseline(for: key, samples: samples, now: now)
+                let set = baseline.baseline(for: key, samples: pool, now: now)
                 let metric = value == \ProbeSample.tokensPerSecond ? set.tokPerSec : set.ttft
                 median = metric.median > 0 ? metric.median : fallbackMedian
                 medians[sample.model] = median

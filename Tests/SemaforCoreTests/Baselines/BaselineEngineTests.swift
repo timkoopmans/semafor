@@ -147,6 +147,55 @@ struct BaselineEngineTests {
         #expect(subject.z(4.5, metric: wide, floor: 0.25) == 2.5)
     }
 
+    @Test func sparseBucketRelaxesToNeighbourBucketsBeforeDefaults() {
+        // Dogfood bug: tiles queried the CURRENT 6-hour bucket over a 24 h
+        // pool; a quiet evening printed the absolute defaults as "usual".
+        // A bucket-poor segment must borrow other buckets' history instead.
+        let subject = engine()
+        let noon = date(weekend: false, hour: 11)
+        let key = subject.key(at: noon, provider: .claude, model: "claude-opus-5-5")
+        // Nothing at all in bucket 1 (06–12 h): all history is pre-dawn.
+        let samples = (0..<25).map {
+            sample(at: date(weekend: false, hour: $0 % 2 == 0 ? 1 : 4, minute: $0),
+                   ttft: 3.0, tokPerSec: 60)
+        }
+        let set = subject.baseline(for: key, samples: samples, now: noon.addingTimeInterval(3600))
+        #expect(set.learned)
+        #expect(set.ttft.median == 3.0)      // not the 8 default
+        #expect(set.tokPerSec.median == 60)  // not the 20 default
+    }
+
+    @Test func weekendSplitRelaxesWhenThatSideHasNoHistory() {
+        // Work-only tools queried on a Sunday: weekday history still learns.
+        let subject = engine()
+        let sunday = date(weekend: true, hour: 10)
+        let key = subject.key(at: sunday, provider: .claude, model: "claude-opus-5-5")
+        let weekdays = (0..<25).map {
+            sample(at: date(weekend: false, hour: 10, minute: $0), ttft: 1.5, tokPerSec: 90)
+        }
+        // Query key is the weekend segment; the clock sits after the history.
+        let set = subject.baseline(for: key, samples: weekdays, now: date(weekend: false, hour: 19))
+        #expect(set.learned)
+        #expect(set.ttft.median == 1.5)
+        #expect(set.tokPerSec.median == 90)
+    }
+
+    @Test func relaxationNeverCrossesModelOrProvider() {
+        // 40 samples of ANOTHER model in the same bucket: opus must still
+        // fall back to the absolute default, not borrow sonnet's history.
+        let subject = engine()
+        let at = date(weekend: false, hour: 10)
+        let key = subject.key(at: at, provider: .claude, model: "claude-opus-5-5")
+        let sonnet = (0..<40).map {
+            sample(at: at.addingTimeInterval(Double($0) * 60),
+                   model: "claude-sonnet-5-5", ttft: 0.4, tokPerSec: 220)
+        }
+        let set = subject.baseline(for: key, samples: sonnet, now: at.addingTimeInterval(3600))
+        #expect(!set.learned)
+        #expect(set.ttft.median == 8)
+        #expect(set.tokPerSec.median == 20)
+    }
+
     @Test func missingMetricValuesDoNotCount() {
         let subject = engine()
         let at = date(weekend: false, hour: 10)

@@ -17,8 +17,7 @@ public struct CodexLogExtractor: SessionLogExtracting {
         let fileName: String
         var startTs: Date
         var model: String?
-        var firstItemTs: Date?
-        var sawToolCall = false
+        var firstOutputTs: Date?
         var acceptedTokens = 0
         var acceptedSeconds = 0.0
     }
@@ -73,12 +72,24 @@ public struct CodexLogExtractor: SessionLogExtracting {
 
         case "response_item":
             guard var turn = openTurns[path],
-                  let payloadType = (json["payload"] as? [String: Any])?["type"] as? String
+                  let payload = json["payload"] as? [String: Any],
+                  let payloadType = payload["type"] as? String
             else { return }
-            if payloadType == "function_call" || payloadType == "custom_tool_call" {
-                turn.sawToolCall = true
-            } else if turn.firstItemTs == nil {
-                turn.firstItemTs = ts
+            // TTFT anchors on the first MODEL output only. Codex logs the
+            // prompt echo (message role=user) ~17 ms after task_started and
+            // tool outputs are CLI work — counting either made every Codex
+            // ttft read ~0.0 s in the dogfood build.
+            let isModelOutput: Bool
+            switch payloadType {
+            case "reasoning", "function_call", "custom_tool_call":
+                isModelOutput = true
+            case "message":
+                isModelOutput = (payload["role"] as? String) == "assistant"
+            default:
+                isModelOutput = false
+            }
+            if isModelOutput, turn.firstOutputTs == nil {
+                turn.firstOutputTs = ts
             }
             openTurns[path] = turn
 
@@ -139,10 +150,11 @@ public struct CodexLogExtractor: SessionLogExtracting {
 
     private mutating func complete(turn: inout OpenTurn, at completeTs: Date, path: String) {
         let ttft: TimeInterval?
-        if turn.sawToolCall {
-            ttft = nil  // first item was tool noise, not model output
-        } else if let firstItemTs = turn.firstItemTs {
-            ttft = max(0, firstItemTs.timeIntervalSince(turn.startTs))
+        if let firstOutput = turn.firstOutputTs {
+            // Time to first completed model output item (a tool call counts:
+            // it is model output). Overestimates raw first-token time but is
+            // monotone with queueing — the degradation signal we want.
+            ttft = max(0, firstOutput.timeIntervalSince(turn.startTs))
         } else {
             ttft = nil
         }

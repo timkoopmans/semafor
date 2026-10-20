@@ -95,6 +95,20 @@ struct ViewModelsVerdictsTests {
         #expect(model.tileTTFT?.usualText == "usual 2.0 s")
     }
 
+    @Test func tileUsualSurvivesProviderBeingIdleOverDay() {
+        // Codex dogfood bug: baseline pool was 24 h only, so a provider idle
+        // most of the day silently fell back to the settings defaults and the
+        // tile read "usual 20" (the default) instead of the learned median.
+        // Pool must be the 7-day history the store already holds.
+        var recent = (0..<25).map { sample(offset: -2 * 86_400 - Double($0) * 3_600) }  // 25 uniform @80/2.0, 2–4 days old
+        recent.append(sample(offset: -3_600, ttft: 2.0, tokPerSec: 40))  // the only call in the last 24 h
+        let model = section(recent: recent)
+        #expect(model.tileTokPerSec?.valueText == "40 tok/s")     // latest measured stands
+        #expect(model.tileTokPerSec?.usualText == "usual 80")     // learned, not the 20 default
+        #expect(model.tileTokPerSec?.color == .red)               // z = (80−40)/2
+        #expect(model.tileTTFT?.usualText == "usual 2.0 s")       // not the 8.0 default
+    }
+
     @Test func tileColorLadderFollowsDirectionalZ() {
         // MAD collapses to 0 ⇒ MAD floor 2 for tok/s: z = (80 − v)/2.
         let green = section(recent: learnedSeries(latestTok: 80))
