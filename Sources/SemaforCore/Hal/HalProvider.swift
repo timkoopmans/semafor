@@ -36,11 +36,10 @@ public final class HalProvider: Provider, @unchecked Sendable {
         let dto = try await fetchJSON(HalModelsResponse.self, EndpointRequest(url: url), client: http)
 
         // Exact configured-model match, else whatever the router serves
-        // first; an empty catalogue records nothing and keeps the old pick.
+        // first, else nil; an empty catalogue is a success and records nil
+        // (box is up, serving nothing). Only fetch failures keep the old pick.
         let pick = dto.data.first(where: { $0.id == settings.halModelName })?.id ?? dto.data.first?.id
-        if let pick {
-            lock.withLockUnsafe { lastServedModel = pick }
-        }
+        lock.withLockUnsafe { lastServedModel = pick }
         return []
     }
 

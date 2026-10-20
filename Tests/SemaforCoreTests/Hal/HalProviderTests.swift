@@ -88,6 +88,7 @@ struct HalProviderTests {
             .json(#"{"data":[{"id":"glm-4.6"},{"id":"Qwen3.8-Flash-Next"}]}"#, status: 200),
             .json(#"{"data":[{"id":"deepseek-v3.2"},{"id":"kimi-k2"}]}"#, status: 200),
             .json(#"{"data":[]}"#, status: 200),
+            .networkError,
         ])
         let provider = HalProvider(http: client, settings: makeSettings())
 
@@ -98,7 +99,20 @@ struct HalProviderTests {
         #expect(await provider.servedModel() == "deepseek-v3.2")  // no exact match ⇒ first row
 
         _ = try await provider.fetchLimits()
-        #expect(await provider.servedModel() == "deepseek-v3.2")  // empty data ⇒ nil, previous kept
+        #expect(await provider.servedModel() == nil)  // empty data is still a success ⇒ records nil
+
+        await #expect(throws: ProviderError.network) {
+            _ = try await provider.fetchLimits()
+        }
+        #expect(await provider.servedModel() == nil)  // failures keep the last value, never resurrect
+    }
+
+    @Test func statusPageIsUnknownWithoutNetwork() async throws {
+        let (client, box) = scriptedClient([])  // zero canned responses; any request would throw
+        let provider = HalProvider(http: client, settings: makeSettings())
+
+        #expect(try await provider.statusPage() == .unknown)
+        #expect(box.recorded.isEmpty)  // proven no network call, not just a value
     }
 
     @Test func failureKeepsLastServedModel() async throws {
