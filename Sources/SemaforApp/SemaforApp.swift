@@ -127,11 +127,11 @@ final class AppModel: ObservableObject {
 
         var verdicts: [ProviderID: Verdict] = [:]
         var probesByProvider: [ProviderID: (probes: [ProbeSample], controls: [ControlSample])] = [:]
+        let allControls = await store.controlSamples(since: probeSince)  // one read for all providers
         for id in [ProviderID.claude, .codex] {
             guard let snapshot = latestSnapshots[id] else { continue }
             let probes = await store.probeSamples(provider: id, since: probeSince)
-            let controls = await store.controlSamples(since: probeSince)
-            probesByProvider[id] = (probes, controls)
+            probesByProvider[id] = (probes, allControls)
 
             var paceStatuses: [WindowName: BurnRateEstimator.PaceStatus] = [:]
             for window in snapshot.windows {
@@ -145,7 +145,7 @@ final class AppModel: ObservableObject {
             verdicts[id] = VerdictEngine.verdict(
                 for: id,
                 input: VerdictInput(
-                    snapshot: snapshot, probes: probes, controls: controls,
+                    snapshot: snapshot, probes: probes, controls: allControls,
                     paceStatuses: paceStatuses),
                 baseline: baseline, thresholds: thresholds, now: now)
         }

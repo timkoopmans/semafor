@@ -109,7 +109,8 @@ public struct CodexLogExtractor: SessionLogExtracting {
 
         case "task_complete":
             guard var turn = openTurns[path] else { return }
-            // Prefer the event's own turn_id when it matches the open turn.
+            // Adopt the completing event's own turn_id (it is the CLI's
+            // canonical spelling when task_started only had an attribution).
             if let closedId = payload["turn_id"] as? String, closedId != turn.id {
                 turn.id = closedId
             }

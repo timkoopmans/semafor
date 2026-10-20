@@ -123,6 +123,28 @@ struct SessionLogTailerTests {
         #expect(got[0].url.lastPathComponent == "s.jsonl")
     }
 
+    @Test func pendingLinesSelfLoadsState() async throws {
+        // Review I4: the state file must be picked up without an explicit
+        // loadState() call, or a scanNow racing start() re-reads everything.
+        let root = try makeDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("a.jsonl")
+        try write("{\"a\":1}\n", to: file)
+        let first = makeTailer(root: root)
+        #expect(await first.pendingLines(in: [root], namePattern: "*.jsonl").count == 1)
+        try await first.saveState()
+
+        let second = makeTailer(root: root)  // no explicit loadState()
+        #expect(await second.pendingLines(in: [root], namePattern: "*.jsonl").isEmpty)
+
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("{\"a\":2}\n".utf8))
+        try handle.close()
+        #expect(await second.pendingLines(in: [root], namePattern: "*.jsonl").map(\.text)
+            == ["{\"a\":2}"])
+    }
+
     @Test func lastActivityUsesNewestFile() async throws {
         let root = try makeDir()
         defer { try? FileManager.default.removeItem(at: root) }

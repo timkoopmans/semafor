@@ -125,6 +125,18 @@ struct VerdictEngineTests {
         #expect(result.state == .ok)
     }
 
+    @Test func staleControlEvidenceCannotBlameTheNetwork() {
+        // Review C1: control evidence must be as fresh as probe evidence, or
+        // an old VPN flake + disabled control toggle pins UNKNOWN forever.
+        let eightHoursAgo = now.addingTimeInterval(-8 * 3600)
+        let staleBad = [0.0, 1.0, 2.0].map { index in
+            ControlSample(provider: .claude, latency: nil,
+                          timestamp: eightHoursAgo.addingTimeInterval(Double(index) * 60))
+        }
+        let result = verdict(probes: fast(24, firstOffset: 36 * 60), controls: staleBad)
+        #expect(result.state == .ok)
+    }
+
     @Test func windowNearCapIsLimitedAndBeatsCrawling() {
         let slow = fast(24) + [sample(at: 25 * 60, ttft: 21, tokPerSec: 9),
                                sample(at: 26 * 60, ttft: 21, tokPerSec: 9),
@@ -159,17 +171,33 @@ struct VerdictEngineTests {
         #expect(result.reasons.first?.detail.contains("z=") == true)
     }
 
+    @Test func sustainedCrawlCannotCertifyItselfNormal() {
+        // Review I2: the z-comparison baseline must exclude the recency
+        // window, or ≥ 50 % slow samples in a segment flip the learned
+        // median onto the crawl itself and the verdict reads .ok.
+        // (Offsets are relative to segmentStart 10:00; now = 10:40,
+        // recency 30 min ⇒ history sits before 10:10.)
+        let fastHistory = (0..<20).map {
+            sample(at: -((40.0 + Double($0) * 2) * 60), ttft: 2.0, tokPerSec: 80)
+        }
+        let slowFresh = (0..<24).map {
+            sample(at: 37 * 60 - Double($0) * 40, ttft: 21, tokPerSec: 9)
+        }
+        let result = verdict(probes: fastHistory + slowFresh)
+        #expect(result.state == .crawling)
+    }
+
     @Test func moderateSlowRunDegrades() {
-        // Fast segment with real spread (tok/s 78/82); with the slow tail the
-        // learned median/MAD settle at 78/4, so a 60 tok/s tail gives
-        // z = 18/4 = 4.5 — over zWarn, under zCrawl. ttft stays quiet (z 0.8).
+        // History baseline (outside the recency window): tok/s 78/82 ⇒
+        // median 80, MAD 2; a 71 tok/s tail gives z = 9/2 = 4.5 — over
+        // zWarn, under zCrawl. ttft stays quiet (z 0.8).
         var fillers: [ProbeSample] = []
         for i in 0..<24 {
-            fillers.append(sample(at: Double(i) * 60, ttft: 2.0, tokPerSec: i.isMultiple(of: 2) ? 78 : 82))
+            fillers.append(sample(at: -((40.0 + Double(i) * 2) * 60), ttft: 2.0, tokPerSec: i.isMultiple(of: 2) ? 78 : 82))
         }
-        let degraded = fillers + [sample(at: 25 * 60, ttft: 2.2, tokPerSec: 60),
-                                  sample(at: 26 * 60, ttft: 2.2, tokPerSec: 60),
-                                  sample(at: 27 * 60, ttft: 2.2, tokPerSec: 60)]
+        let degraded = fillers + [sample(at: 37 * 60, ttft: 2.2, tokPerSec: 71),
+                                  sample(at: 38 * 60, ttft: 2.2, tokPerSec: 71),
+                                  sample(at: 39 * 60, ttft: 2.2, tokPerSec: 71)]
         let result = verdict(probes: degraded)
         #expect(result.state == .degraded)
         #expect(result.reasons.first?.code == "toks_z")

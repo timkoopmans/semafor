@@ -23,6 +23,7 @@ public actor SessionLogTailer {
 
     private let stateURL: URL
     private let fileManager = FileManager.default
+    private var loaded = false
     private var offsets: [String: Int] = [:]
 
     public init(stateURL: URL) {
@@ -31,7 +32,15 @@ public actor SessionLogTailer {
 
     /// Missing or corrupt state is tolerated as empty (a full re-read follows;
     /// dedupe by `sessionKey` on the store's read path covers duplicates).
+    /// Also happens lazily on first read (review I4), so a scan can never
+    /// race past it.
     public func loadState() {
+        ensureLoaded()
+    }
+
+    private func ensureLoaded() {
+        guard !loaded else { return }
+        loaded = true
         guard let data = try? Data(contentsOf: stateURL),
               let state = try? JSONDecoder().decode(TailState.self, from: data)
         else { return }
@@ -39,6 +48,7 @@ public actor SessionLogTailer {
     }
 
     public func saveState() throws {
+        ensureLoaded()
         let data = try JSONEncoder().encode(TailState(files: offsets))
         try? fileManager.createDirectory(
             at: stateURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -49,6 +59,7 @@ public actor SessionLogTailer {
     /// (recursive, `namePattern` via fnmatch), sorted by path. Offsets advance
     /// only over the returned lines.
     public func pendingLines(in dirs: [URL], namePattern: String) -> [TailedLine] {
+        ensureLoaded()
         var result: [TailedLine] = []
         for url in fileURLs(in: dirs, namePattern: namePattern) {
             result.append(contentsOf: pendingLines(for: url))
@@ -58,6 +69,7 @@ public actor SessionLogTailer {
 
     /// Newest content-modification date across matching files; nil when none.
     public func lastActivity(of dirs: [URL], namePattern: String, now: Date) -> Date? {
+        ensureLoaded()
         var latest: Date?
         for url in fileURLs(in: dirs, namePattern: namePattern) {
             guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),

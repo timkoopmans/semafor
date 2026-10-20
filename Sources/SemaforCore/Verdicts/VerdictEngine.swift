@@ -52,8 +52,11 @@ public enum VerdictEngine {
             $0.provider == id && $0.timestamp <= now
                 && now.timeIntervalSince($0.timestamp) <= thresholds.sampleRecency
         }
+        // Control evidence must be as fresh as probe evidence (review C1):
+        // stale bad controls prove nothing about *now*.
         let freshControls = input.controls
-            .filter { $0.provider == id }
+            .filter { $0.provider == id && $0.timestamp <= now
+                && now.timeIntervalSince($0.timestamp) <= thresholds.sampleRecency }
             .sorted { $0.timestamp > $1.timestamp }
             .prefix(thresholds.controlRecentCount)
         if measuring, !freshControls.isEmpty,
@@ -126,13 +129,19 @@ public enum VerdictEngine {
             $0.provider == id && $0.outcome == .ok && $0.timestamp <= now
                 && now.timeIntervalSince($0.timestamp) <= thresholds.sampleRecency
         }
+        // Review I2: z-comparison baselines come only from *outside* the
+        // recency window, so a sustained crawl can't move the learned
+        // median onto itself and certify itself normal.
+        let history = input.probes.filter {
+            $0.provider == id && now.timeIntervalSince($0.timestamp) > thresholds.sampleRecency
+        }
         var worst: (state: ProviderState, reason: VerdictReason)?
         for (_, group) in Dictionary(grouping: fresh, by: \.model) {
             let sorted = group.sorted { $0.timestamp < $1.timestamp }
             guard sorted.count >= thresholds.consecutiveN else { continue }
             let tail = Array(sorted.suffix(thresholds.consecutiveN))
             let scored = tail.map { slowScore($0, model: $0.model, id: id,
-                                              probes: input.probes,
+                                              probes: history,
                                               baseline: baseline, thresholds: thresholds, now: now) }
 
             let allCrawl = scored.allSatisfy { ($0.ttftZ > thresholds.zCrawl || ($0.tokZ ?? -1) > thresholds.zCrawl) }

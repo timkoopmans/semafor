@@ -138,21 +138,51 @@ public actor SampleStore: LimitsWriting {
 
     // MARK: - Reading
 
+    private struct CacheEntry {
+        let mtime: Date?
+        let size: Int
+        let records: [StoreRecord]
+        let corruptLines: Int
+    }
+    private var recordCache: [String: CacheEntry] = [:]
+
     /// Decodes every line of every file for a record type; callers pattern-match
-    /// the variants they want. Unknown/torn lines increment `corrupt` (never throw).
+    /// the variants they want. Unknown/torn lines increment `corrupt` (never
+    /// throw). Decoded files are cached by (mtime, size) — only the day file
+    /// being appended to re-parses (review I3; per-line byte split also keeps a
+    /// single corrupt byte from losing a whole day).
     private func readRecords(type: String, corrupt: inout Int) -> [StoreRecord] {
         var records: [StoreRecord] = []
+        let present = Set(fileURLs(type: type).map(\.path))
+        recordCache = recordCache.filter { present.contains($0.key) }  // prune rotated files
         for url in fileURLs(type: type) {
-            guard let contents = try? String(contentsOf: url, encoding: .utf8) else { continue }
-            for rawLine in contents.split(separator: "\n", omittingEmptySubsequences: false) {
-                let line = rawLine.trimmingCharacters(in: .whitespaces)
-                if line.isEmpty { continue }  // tolerated blank line
-                guard let record = try? decoder.decode(StoreRecord.self, from: Data(line.utf8)) else {
-                    corrupt += 1  // e.g. a truncated final line from a crash
-                    continue
-                }
-                records.append(record)
+            let attributes = try? fileManager.attributesOfItem(atPath: url.path)
+            let mtime = attributes?[.modificationDate] as? Date
+            let size = (attributes?[.size] as? NSNumber)?.intValue ?? -1
+            if let hit = recordCache[url.path], hit.mtime == mtime, hit.size == size {
+                corrupt += hit.corruptLines
+                records.append(contentsOf: hit.records)
+                continue
             }
+            var fileCorrupt = 0
+            let fileRecords = decodeFile(url, corrupt: &fileCorrupt)
+            recordCache[url.path] = CacheEntry(
+                mtime: mtime, size: size, records: fileRecords, corruptLines: fileCorrupt)
+            corrupt += fileCorrupt
+            records.append(contentsOf: fileRecords)
+        }
+        return records
+    }
+
+    private func decodeFile(_ url: URL, corrupt: inout Int) -> [StoreRecord] {
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        var records: [StoreRecord] = []
+        for slice in data.split(separator: 0x0A, omittingEmptySubsequences: true) {
+            guard let record = try? decoder.decode(StoreRecord.self, from: Data(slice)) else {
+                corrupt += 1  // e.g. a truncated final line from a crash
+                continue
+            }
+            records.append(record)
         }
         return records
     }
