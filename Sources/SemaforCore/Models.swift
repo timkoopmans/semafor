@@ -310,16 +310,21 @@ public struct ProviderSnapshot: Sendable {
     public let windows: [UsageWindow]
     public let fetchedAt: Date
     public let lastError: ProviderError?
+    /// Official status page seen on the last successful limits poll; nil
+    /// when the feed failed (spec §8.2 divergence input).
+    public let officialStatus: StatusPageState?
 
     public init(
         providerID: ProviderID,
         windows: [UsageWindow],
         fetchedAt: Date,
-        lastError: ProviderError?
+        lastError: ProviderError?,
+        officialStatus: StatusPageState? = nil
     ) {
         self.providerID = providerID
         self.windows = windows
         self.fetchedAt = fetchedAt
         self.lastError = lastError
+        self.officialStatus = officialStatus
     }
 }

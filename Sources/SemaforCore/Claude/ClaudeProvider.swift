@@ -7,6 +7,7 @@ public struct ClaudeProvider: Provider {
     public let id: ProviderID = .claude
 
     public static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
+    public static let statusURL = URL(string: "https://status.claude.com/api/v2/status.json")!
     static let oauthBetaHeader = "oauth-2025-04-20"  // Task 6 spike may revise
 
     private let http: any HTTPClient
@@ -51,8 +52,8 @@ public struct ClaudeProvider: Provider {
         }
     }
 
-    public func statusPage() async throws -> StatusPageState {
-        .unknown
+    public func statusPage() async -> StatusPageState {
+        await fetchStatuspage(from: Self.statusURL, http: http)
     }
 
     public var sessionLogPaths: [URL] {

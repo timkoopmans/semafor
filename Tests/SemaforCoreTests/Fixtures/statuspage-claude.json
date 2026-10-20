@@ -1,0 +1,13 @@
+{
+  "page": {
+    "id": "tymt9n04zgry",
+    "name": "Claude",
+    "time_zone": "Etc/UTC",
+    "updated_at": "2026-10-20T04:41:21.715Z",
+    "url": "https://status.claude.com"
+  },
+  "status": {
+    "description": "All Systems Operational",
+    "indicator": "none"
+  }
+}

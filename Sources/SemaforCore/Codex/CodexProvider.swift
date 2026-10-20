@@ -9,6 +9,7 @@ public struct CodexProvider: Provider {
     public let id: ProviderID = .codex
 
     public static let usageURL = URL(string: "https://chatgpt.com/backend-api/codex/usage")!
+    public static let statusURL = URL(string: "https://status.openai.com/api/v2/status.json")!
 
     private let http: any HTTPClient
     private let auth: any CodexAuthReading
@@ -52,8 +53,8 @@ public struct CodexProvider: Provider {
         }
     }
 
-    public func statusPage() async throws -> StatusPageState {
-        .unknown
+    public func statusPage() async -> StatusPageState {
+        await fetchStatuspage(from: Self.statusURL, http: http)
     }
 
     public var sessionLogPaths: [URL] {

@@ -164,8 +164,10 @@ struct PollSchedulerTests {
         let scheduler = PollScheduler(providers: [provider], writer: writer, settings: makeSettings(), clock: clock)
 
         await scheduler.start()
-        try await waitUntil("record written") { await writer.records.count == 1 }
-        let record = try #require(await writer.records.first)
+        try await waitUntil("record written") {
+            await writer.records.contains { if case .limits = $0 { return true } else { return false } }
+        }
+        let record = try #require(await writer.records.first { if case .limits = $0 { return true } else { return false } })
         guard case .limits(let id, let windows, let fetchedAt) = record else {
             Issue.record("expected a limits record")
             return

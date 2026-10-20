@@ -98,23 +98,32 @@ public actor PollScheduler {
         let now = Date()
         do {
             let windows = try await provider.fetchLimits()
+            // Status page rides along with the limits poll; a feed failure
+            // must never disturb the limits snapshot (spec §8.2).
+            let status = try? await provider.statusPage()
             currentSnapshots[id] = ProviderSnapshot(
-                providerID: id, windows: windows, fetchedAt: now, lastError: nil)
+                providerID: id, windows: windows, fetchedAt: now, lastError: nil,
+                officialStatus: status)
             try? await writer?.append(.limits(id, windows, fetchedAt: now))
+            if let status {
+                try? await writer?.append(.status(id, status, fetchedAt: now))
+            }
         } catch let error as ProviderError {
             let previous = currentSnapshots[id]
             currentSnapshots[id] = ProviderSnapshot(
                 providerID: id,
                 windows: previous?.windows ?? [],
                 fetchedAt: previous?.fetchedAt ?? now,
-                lastError: error)
+                lastError: error,
+                officialStatus: previous?.officialStatus)
         } catch {
             let previous = currentSnapshots[id]
             currentSnapshots[id] = ProviderSnapshot(
                 providerID: id,
                 windows: previous?.windows ?? [],
                 fetchedAt: previous?.fetchedAt ?? now,
-                lastError: .network)
+                lastError: .network,
+                officialStatus: previous?.officialStatus)
         }
         hub.publish(currentSnapshots)
     }
