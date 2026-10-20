@@ -1,0 +1,25 @@
+{"timestamp":"2026-10-20T02:00:00.000Z","type":"session_meta","payload":{"cwd":"/work/scrubbed","originator":"codex_cli_rs","model":"gpt-6-astra"}}
+not json at all {{{
+{"timestamp":"2026-10-20T02:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":7}}}}
+{"timestamp":"2026-10-20T02:00:45.567Z","type":"event_msg","payload":{"type":"task_started","turn_attribution":{"turn_id":"turn-healthy","turn_trigger":"user","parent_turn_id":null}}}
+{"timestamp":"2026-10-20T02:00:47.500Z","type":"response_item","payload":{"type":"reasoning","summary":[],"content":null}}
+{"timestamp":"2026-10-20T02:00:48.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":500,"cached_input_tokens":100,"output_tokens":50}}}}
+{"timestamp":"2026-10-20T02:00:53.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":500,"cached_input_tokens":100,"output_tokens":150}}}}
+{"timestamp":"2026-10-20T02:00:55.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-healthy","last_agent_message":"scrubbed"}}
+{"timestamp":"2026-10-20T02:05:00.000Z","type":"event_msg","payload":{"type":"task_started","turn_attribution":{"turn_id":"turn-tools","turn_trigger":"user","parent_turn_id":null}}}
+{"timestamp":"2026-10-20T02:05:02.000Z","type":"response_item","payload":{"type":"reasoning","summary":[],"content":null}}
+{"timestamp":"2026-10-20T02:05:03.000Z","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"cmd\":\"scrubbed\"}","call_id":"c-1"}}
+{"timestamp":"2026-10-20T02:05:05.000Z","type":"response_item","payload":{"type":"function_call_output","output":"scrubbed","call_id":"c-1"}}
+{"timestamp":"2026-10-20T02:05:08.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":900,"cached_input_tokens":200,"output_tokens":150}}}}
+{"timestamp":"2026-10-20T02:05:13.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":900,"cached_input_tokens":200,"output_tokens":200}}}}
+{"timestamp":"2026-10-20T02:05:14.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-tools","last_agent_message":"scrubbed"}}
+{"timestamp":"2026-10-20T02:10:00.000Z","type":"event_msg","payload":{"type":"task_started","turn_attribution":{"turn_id":"turn-gap","turn_trigger":"user","parent_turn_id":null}}}
+{"timestamp":"2026-10-20T02:10:02.000Z","type":"response_item","payload":{"type":"reasoning","summary":[],"content":null}}
+{"timestamp":"2026-10-20T02:10:02.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":300,"output_tokens":200}}}}
+{"timestamp":"2026-10-20T02:10:07.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":300,"output_tokens":260}}}}
+{"timestamp":"2026-10-20T02:14:07.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":300,"output_tokens":260}}}}
+{"timestamp":"2026-10-20T02:14:12.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":300,"output_tokens":270}}}}
+{"timestamp":"2026-10-20T02:14:15.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-gap","last_agent_message":"scrubbed"}}
+{"timestamp":"2026-10-20T02:20:00.000Z","type":"event_msg","payload":{"type":"task_started","turn_attribution":{"turn_id":"turn-open","turn_trigger":"user","parent_turn_id":null}}}
+{"timestamp":"2026-10-20T02:20:02.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1100,"cached_input_tokens":400,"output_tokens":290}}}}
+{"timestamp":"2026-10-20T02:20:07.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1100,"cached_input_tokens":400,"output_tokens":340}}}}
