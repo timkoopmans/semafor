@@ -68,8 +68,18 @@ public struct CodexProvider: Provider {
 struct CodexUsageResponse: Decodable {
     let rateLimits: RateLimits?
 
-    enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey {
         case rateLimits = "rate_limits"
+        case rateLimit = "rate_limit"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Live endpoint (Task 6 spike) reports singular `rate_limit`; the
+        // plural spelling from early third-party docs stays as an alias.
+        rateLimits =
+            try container.decodeIfPresent(RateLimits.self, forKey: .rateLimit)
+            ?? container.decodeIfPresent(RateLimits.self, forKey: .rateLimits)
     }
 
     struct RateLimits: Decodable {
@@ -85,8 +95,6 @@ struct CodexUsageResponse: Decodable {
 
         init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            // Observed payloads have used both key spellings; try the planned
-            // one first, then the alias the ecosystem's tools report.
             primaryPayload =
                 try container.decodeIfPresent(WindowPayload.self, forKey: .primaryWindow)
                 ?? container.decodeIfPresent(WindowPayload.self, forKey: .primary)
@@ -101,17 +109,22 @@ struct CodexUsageResponse: Decodable {
         let windowSeconds: Int?
         let resetsAtValue: FlexibleDateValue?
 
-        enum CodingKeys: String, CodingKey {
+        private enum CodingKeys: String, CodingKey {
             case usedPercent = "used_percent"
             case windowSeconds = "limit_window_seconds"
-            case resetsAtValue = "resets_at"
+            case resetAt = "reset_at"
+            case resetsAt = "resets_at"
         }
 
         init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             usedPercent = lenientDouble(container, .usedPercent)
             windowSeconds = lenientInt(container, .windowSeconds)
-            resetsAtValue = try container.decodeIfPresent(FlexibleDateValue.self, forKey: .resetsAtValue)
+            // Live shape (Task 6 spike) uses `reset_at` (epoch seconds);
+            // `resets_at` stays as an alias.
+            resetsAtValue =
+                try container.decodeIfPresent(FlexibleDateValue.self, forKey: .resetAt)
+                ?? container.decodeIfPresent(FlexibleDateValue.self, forKey: .resetsAt)
         }
     }
 }

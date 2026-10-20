@@ -91,14 +91,14 @@ struct CodexProviderTests {
         let windows = try await provider.fetchLimits()
 
         let primary = try #require(windows.first { $0.name == .primary })
-        #expect(primary.usedPercent == 42.5)
-        #expect(primary.windowSeconds == 18_000)
-        #expect(primary.resetsAt?.timeIntervalSince1970
-            == ISO8601DateFormatter().date(from: "2026-10-20T09:30:00Z")?.timeIntervalSince1970)
+        #expect(primary.usedPercent == 57.0)
+        #expect(primary.windowSeconds == 604_800)
+        #expect(primary.resetsAt == Date(timeIntervalSince1970: 1_792_884_737))
 
         let secondary = try #require(windows.first { $0.name == .secondary })
-        #expect(secondary.usedPercent == 68.5)
-        #expect(secondary.windowSeconds == 604_800)
+        #expect(secondary.usedPercent == 12.5)
+        #expect(secondary.windowSeconds == 18_000)
+        #expect(secondary.resetsAt == Date(timeIntervalSince1970: 1_765_000_000))
         #expect(windows.count == 2)
 
         #expect(counter.last?.value(forHTTPHeaderField: "Authorization") == "Bearer test-access-token")
@@ -160,16 +160,18 @@ struct CodexProviderTests {
         #expect(try #require(windows.first).usedPercent == 42.0)
     }
 
-    @Test func renamedKeyPrimaryStillDecodes() async throws {
-        // Endpoint drift pin (Review Focus): providers rename keys without
-        // notice; tolerate the observed `primary` alias alongside `primary_window`.
+    @Test func pluralRateLimitsAliasStillDecodes() async throws {
+        // Endpoint drift pin (Review Focus): the live endpoint reports
+        // `rate_limit`/`reset_at`; the originally planned plural/spelling
+        // variants must keep working if OpenAI renames again.
         let provider = makeProvider(
             auth: FakeCodexAuth(mode: .tokens(validTokens)),
             client: okStub(Data(
-                #"{"rate_limits":{"primary":{"used_percent":11,"limit_window_seconds":18000}}}"#.utf8)))
+                #"{"rate_limits":{"primary_window":{"used_percent":11,"limit_window_seconds":18000,"resets_at":"2026-10-20T09:30:00Z"}}}"#.utf8)))
         let windows = try await provider.fetchLimits()
         let primary = try #require(windows.first { $0.name == .primary })
         #expect(primary.usedPercent == 11.0)
         #expect(primary.windowSeconds == 18_000)
+        #expect(primary.resetsAt != nil)
     }
 }

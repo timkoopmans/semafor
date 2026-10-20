@@ -1,11 +1,51 @@
 {
-  "uuid": "user-removed",
   "five_hour": {
     "utilization": 42.0,
-    "resets_at": "2026-10-20T09:30:00Z"
+    "resets_at": "2026-10-20T09:30:00.000000+00:00",
+    "limit_dollars": null,
+    "used_dollars": null,
+    "remaining_dollars": null,
+    "locked_reason": null
   },
   "seven_day": {
     "utilization": 68.5,
-    "resets_at": "2026-10-23T09:30:00Z"
+    "resets_at": "2026-10-23T09:30:00.000000+00:00",
+    "limit_dollars": null,
+    "used_dollars": null,
+    "remaining_dollars": null,
+    "locked_reason": null
+  },
+  "seven_day_oauth_apps": null,
+  "seven_day_opus": null,
+  "extra_usage": {
+    "is_enabled": false,
+    "monthly_limit": 31000,
+    "used_credits": 0.0,
+    "utilization": 0.0,
+    "currency": "AUD"
+  },
+  "limits": [
+    {
+      "kind": "session",
+      "group": "session",
+      "percent": 42,
+      "severity": "normal",
+      "resets_at": "2026-10-20T09:30:00.000000+00:00"
+    },
+    {
+      "kind": "weekly_scoped",
+      "group": "weekly",
+      "percent": 44,
+      "severity": "normal",
+      "resets_at": "2026-10-23T09:30:00.000000+00:00",
+      "scope": { "model": { "display_name": "Fable" } }
+    }
+  ],
+  "seven_day_breakdown": {
+    "as_of": "2026-10-20T04:38:25.000000+00:00",
+    "rows": [
+      { "key": "claude_code", "display_name": "Claude Code", "percent": 59 },
+      { "key": "chat", "display_name": "Chats", "percent": 6 }
+    ]
   }
 }

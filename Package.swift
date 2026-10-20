@@ -16,9 +16,14 @@ let package = Package(
             name: "SemaforApp",
             dependencies: ["SemaforCore"]
         ),
+        .executableTarget(
+            name: "SemaforSmoke",
+            dependencies: ["SemaforCore"]
+        ),
         .testTarget(
             name: "SemaforCoreTests",
-            dependencies: ["SemaforCore"]
+            dependencies: ["SemaforCore"],
+            exclude: ["Fixtures"]
         ),
     ],
     swiftLanguageModes: [.v6]
