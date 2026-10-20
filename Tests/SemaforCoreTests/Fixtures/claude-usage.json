@@ -1,0 +1,11 @@
+{
+  "uuid": "user-removed",
+  "five_hour": {
+    "utilization": 42.0,
+    "resets_at": "2026-10-20T09:30:00Z"
+  },
+  "seven_day": {
+    "utilization": 68.5,
+    "resets_at": "2026-10-23T09:30:00Z"
+  }
+}
