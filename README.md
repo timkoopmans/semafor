@@ -1,5 +1,7 @@
 # Semafor
 
+![Semafor popover: Claude and Codex sections with measured ttft/tok-s tiles, 7-day token bars, burn-rate headline, usage windows and reset countdowns](docs/images/screenshot-popover.png)
+
 A macOS menu bar app that tells you what your frontier model subscriptions
 are actually doing, as opposed to what their status pages say.
 
