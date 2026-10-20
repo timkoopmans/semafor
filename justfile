@@ -29,6 +29,10 @@ dev-test:
 live-smoke provider="claude" *args:
     swift run SemaforSmoke {{provider}} {{args}}
 
+# Opt-in passive extractor shape-check against real session logs (Task 12)
+live-scan provider="claude" days="7":
+    swift run SemaforSmoke scan {{provider}} --days {{days}}
+
 # Build a release .app in dist/ (ad-hoc signed unless CODESIGN_IDENTITY is set)
 package version="0.1.0":
     APP_NAME=Semafor VERSION={{version}} scripts/package_app.sh
