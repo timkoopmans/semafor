@@ -106,13 +106,20 @@ struct ProviderSectionModelTests {
                 projections: [:], now: now, settings: settings(), pollInterval: pollInterval)
                 .statusLine
         }
-        #expect(line(.claude, .auth(.missingCredentials)) == "Not signed in — run `claude` once")
-        #expect(line(.codex, .auth(.missingCredentials)) == "Not signed in — run `codex` once")
-        #expect(line(.claude, .auth(.expiredCredentials)) == "Token expired — run `claude` once")
-        #expect(line(.codex, .auth(.expiredCredentials)) == "Token expired — run `codex` once")
-        #expect(line(.claude, .network) == "Network unreachable")
-        #expect(line(.claude, .http(status: 503)) == "Provider API error (503)")
-        #expect(line(.claude, .decoding("junk")) == "Unexpected provider response")
+        #expect(line(.claude, .auth(.missingCredentials)) == "Not signed in — run `claude` once · just now")
+        #expect(line(.codex, .auth(.missingCredentials)) == "Not signed in — run `codex` once · just now")
+        #expect(line(.claude, .auth(.expiredCredentials)) == "Token expired — run `claude` once · just now")
+        #expect(line(.codex, .auth(.expiredCredentials)) == "Token expired — run `codex` once · just now")
+        #expect(line(.claude, .network) == "Network unreachable · just now")
+        #expect(line(.claude, .http(status: 503)) == "Provider API error (503) · just now")
+        #expect(line(.claude, .decoding("junk")) == "Unexpected provider response · just now")
+        // Age of the failing poll rides along: a 429 from the last cycle reads
+        // "… (429) · 12m ago", not something happening right now.
+        let aged = ProviderSectionModel(
+            snapshot: snapshot(.claude, windows: [], error: .http(status: 429), fetchedAt: now.addingTimeInterval(-12 * 60)),
+            projections: [:], now: now, settings: settings(), pollInterval: pollInterval)
+            .statusLine
+        #expect(aged == "Provider API error (429) · 12m ago")
     }
 
     @Test func headlinePrefersLongestWindow() {

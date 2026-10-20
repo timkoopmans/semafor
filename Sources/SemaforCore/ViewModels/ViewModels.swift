@@ -118,7 +118,7 @@ public struct ProviderSectionModel: Equatable, Sendable {
             headline = nil
         }
 
-        statusLine = Self.statusLine(for: snapshot)
+        statusLine = Self.statusLine(for: snapshot, now: now)
 
         if let verdict, verdict.state != .ok {
             var parts = [VerdictEngine.stateLabel(verdict.state)]
@@ -383,21 +383,33 @@ public struct ProviderSectionModel: Equatable, Sendable {
         }
     }
 
-    static func statusLine(for snapshot: ProviderSnapshot) -> String {
-        let cli = snapshot.providerID == .claude ? "claude" : "codex"
+    static func statusLine(for snapshot: ProviderSnapshot, now: Date) -> String {
+        let base: String
         switch snapshot.lastError {
         case nil:
             return ""
         case .auth(.missingCredentials):
-            return "Not signed in — run `\(cli)` once"
+            base = "Not signed in — run `\(cliName(snapshot.providerID))` once"
         case .auth(.expiredCredentials):
-            return "Token expired — run `\(cli)` once"
+            base = "Token expired — run `\(cliName(snapshot.providerID))` once"
         case .network:
-            return "Network unreachable"
+            base = "Network unreachable"
         case .http(let status):
-            return "Provider API error (\(status))"
+            base = "Provider API error (\(status))"
         case .decoding:
-            return "Unexpected provider response"
+            base = "Unexpected provider response"
+        }
+        // The snapshot is the last *successful-or-failed* poll; say how old
+        // that failure is so a 429 from the last poll cycle isn't mistaken
+        // for something happening right now.
+        return "\(base) · \(measurementAge(snapshot.fetchedAt, now: now))"
+    }
+
+    private static func cliName(_ id: ProviderID) -> String {
+        switch id {
+        case .claude: return "claude"
+        case .codex: return "codex"
+        case .hal: return "hal"
         }
     }
 }
