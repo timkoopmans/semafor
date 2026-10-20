@@ -9,8 +9,13 @@ let package = Package(
         .macOS(.v14),
     ],
     targets: [
+        .systemLibrary(
+            name: "CSQLite",
+            path: "Sources/CSQLite"
+        ),
         .target(
-            name: "SemaforCore"
+            name: "SemaforCore",
+            dependencies: ["CSQLite"]
         ),
         .executableTarget(
             name: "SemaforApp",
