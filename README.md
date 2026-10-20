@@ -12,7 +12,9 @@ Reads the OAuth credentials your CLIs already keep on this machine (macOS
 Keychain for Claude Code, `~/.codex/auth.json` for Codex) and talks only to
 each provider's own usage endpoint. Nothing is uploaded anywhere.
 
-Status: M1+M2 in progress. Design: `docs/superpowers/specs/`, plans:
+Status: M1+M2 shipped as 0.1.0 (`CHANGELOG.md`). M3 (probes, verdicts,
+status-page divergence) and M4 (session-log watcher, notifications) get
+separate plans. Design: `docs/superpowers/specs/`, plans:
 `docs/superpowers/plans/`.
 
 ## Build

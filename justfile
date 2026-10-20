@@ -34,7 +34,7 @@ package version="0.1.0":
     APP_NAME=Semafor VERSION={{version}} scripts/package_app.sh
 
 # Build a release .app only, no DMG
-app version="0.1.0": (package version)
+app version="0.1.0":
     SKIP_DMG=1 APP_NAME=Semafor VERSION={{version}} scripts/package_app.sh
 
 # Build a release .app and install it to ~/Applications, replacing any running copy

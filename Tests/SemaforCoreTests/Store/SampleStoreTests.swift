@@ -190,6 +190,24 @@ struct SampleStoreTests {
         try await store.deleteAll()  // never appended; must not throw
     }
 
+    @Test func recordFetchedAtIsISO8601InJSON() async throws {
+        let dir = try tempDirectory()
+        let dateBox = DateBox(Date(timeIntervalSince1970: 1_760_000_000))
+        let store = makeStore(directory: dir, dateNow: { dateBox.now })
+        try await store.append(limitsRecord(.claude, 10))
+
+        let contents = try String(
+            contentsOf: dir.appendingPathComponent("limits-2025-10-09.jsonl"), encoding: .utf8)
+        let json = try #require(
+            JSONSerialization.jsonObject(with: Data(contents.utf8)) as? [String: Any])
+        let payload = try #require(json["limits"] as? [String: Any])
+        // Record-level fetchedAt (window-level is already ISO via UsageWindow).
+        #expect(payload["fetchedAt"] is String, "record-level fetchedAt must be ISO8601, got \(String(describing: payload["fetchedAt"]))")
+        // round-trip must still decode (also covers pre-fix numeric lines)
+        let windows = await store.limits(provider: .claude, since: .distantPast)
+        #expect(windows.count == 1)
+    }
+
     static func dayString(_ date: Date, calendar: Calendar) -> String {
         let formatter = DateFormatter()
         formatter.calendar = calendar
