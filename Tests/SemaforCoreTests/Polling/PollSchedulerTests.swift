@@ -223,7 +223,12 @@ struct PollSchedulerTests {
 
         await scheduler.start()
         try await waitUntil("first claude poll") { await claude.callCount == 1 }
-        clock.advanceMinutes(12)  // well past the jittered 5-min interval
+        // Advance in two hops with a settle gap so a runLoop that registers
+        // its clock sleep after the first hop still finds its deadline due
+        // after the second (same double-advance shape as the tick tests).
+        clock.advanceMinutes(6)  // well past the jittered 5-min interval
+        try? await ContinuousClock().sleep(for: .milliseconds(30))
+        clock.advanceMinutes(6)
         try await waitUntil("claude still polling") { await claude.callCount == 2 }
         #expect(await hal.callCount == 0)  // disabled provider skipped on ticks
 
