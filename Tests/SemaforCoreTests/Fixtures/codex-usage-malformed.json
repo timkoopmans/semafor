@@ -1,0 +1,13 @@
+{
+  "plan_type": "plus",
+  "rate_limits": {
+    "primary_window": null,
+    "secondary_window": {
+      "used_percent": null,
+      "limit_window_seconds": "not-an-int",
+      "resets_at": 1765000000,
+      "surprise": { "nested": [true] }
+    }
+  },
+  "credits": null
+}

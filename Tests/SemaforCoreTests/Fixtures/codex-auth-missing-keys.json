@@ -1,0 +1,8 @@
+{
+  "auth_mode": "chatgpt",
+  "OPENAI_API_KEY": null,
+  "tokens": {
+    "id_token": "id.token.value"
+  },
+  "last_refresh": null
+}

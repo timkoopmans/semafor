@@ -37,11 +37,8 @@ public struct ClaudeProvider: Provider {
             entries.append((.sevenDay, sevenDay, 604_800))
         }
 
-        // Percent-scale ambiguity (spec §6.1 spike note): payloads reporting
-        // only values in (0, 1] are treated as fractions; anything above 1 is
-        // taken as percent as-is.
         let values = entries.compactMap(\.payload.utilization)
-        let scale: Double = (!values.isEmpty && values.allSatisfy { $0 <= 1.0 }) ? 100 : 1
+        let scale = PercentScale.scale(values: values)
         let fetchedAt = Date()
 
         return entries.map { entry in
