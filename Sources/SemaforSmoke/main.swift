@@ -2,10 +2,11 @@ import Foundation
 import SemaforCore
 
 // Opt-in live tools. Usage:
-//   swift run SemaforSmoke claude|codex [--raw]      — live endpoint check
-//   swift run SemaforSmoke scan claude|codex [--days N] — passive extractor
-//     shape-check against this machine's real session logs (numbers and
-//     model slugs only, everything through redact(); exit 0 iff ≥ 1 sample).
+//   swift run SemaforSmoke claude|codex [--raw]          — live endpoint check
+//   swift run SemaforSmoke scan claude|codex|hal [--days N] — passive extractor
+//     shape-check against this machine's real session logs / OpenCode db
+//     (numbers and model slugs only, everything through redact(); exit 0 iff
+//     ≥ 1 sample). hal has no live endpoint, so it scans only.
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 
@@ -19,6 +20,7 @@ switch arguments.first {
 case "codex": providerID = .codex
 case "claude", .none: providerID = .claude
 case let other?:
+    // hal deliberately not accepted here: no limits endpoint to check live.
     FileHandle.standardError.write(Data("unknown provider: \(other) (expected claude or codex)\n".utf8))
     exit(2)
 }
@@ -99,6 +101,7 @@ func runLiveScan(arguments: [String]) async {
     switch arguments.first {
     case "codex": providerID = .codex
     case "claude", .none: providerID = .claude
+    case "hal": providerID = .hal
     case let other?:
         FileHandle.standardError.write(Data("unknown provider: \(other) (expected claude or codex)\n".utf8))
         exit(2)
@@ -108,6 +111,10 @@ func runLiveScan(arguments: [String]) async {
        let parsed = arguments.dropFirst(daysIndex + 1).first.flatMap(Int.init)
     {
         days = max(1, parsed)
+    }
+    if providerID == .hal {
+        await runHalScan(days: days)
+        return
     }
 
     let settings = AppSettings(defaults: UserDefaults(suiteName: "com.timkoopmans.semafor.smoke.scan")!)
@@ -155,6 +162,66 @@ func runLiveScan(arguments: [String]) async {
     }
     if samples.isEmpty {
         FileHandle.standardError.write(Data("scan produced no samples — check extractor rules\n".utf8))
+        exit(1)
+    }
+}
+
+/// One-shot HalScanner pass over the real OpenCode db against throwaway
+/// state and store in temporaryDirectory (unique per run), so the live app's
+/// scan cursor and sample files are never touched. Counts and percentiles
+/// only — no row content, everything through redact().
+func runHalScan(days: Int) async {
+    // Real user settings for the db path, same fallback rule as the app.
+    let settings = AppSettings()
+    let dbPath = settings.halDbPath.isEmpty
+        ? NSHomeDirectory() + "/.local/share/opencode/opencode.db"
+        : settings.halDbPath
+    let dir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("semafor-smoke-hal-scan-\(UUID().uuidString)", isDirectory: true)
+    let store = SampleStore(config: .init(directory: dir))
+    let scanner = HalScanner(
+        dbPath: dbPath, settings: settings, store: store,
+        stateURL: dir.appendingPathComponent("scan-state.json"))
+    let now = Date()
+    do {
+        // scanOnce consumes ≤ 1000 rows per call: drain the whole db by
+        // repeating until the cursor stops moving (exhausted, or parked on
+        // one in-flight assistant row).
+        for _ in 0..<1_000 {
+            let before = await scanner.state().cursor
+            _ = try await scanner.scanOnce(now: now)
+            if await scanner.state().cursor == before { break }
+        }
+    } catch {
+        FileHandle.standardError.write(Data(redact("hal scan failed: \(error)\n").utf8))
+        exit(1)
+    }
+    let windowStart = now.addingTimeInterval(-Double(days) * 86_400)
+    let samples = await store.probeSamples(provider: .hal, since: windowStart)
+        .filter { $0.timestamp <= now }
+    print(redact("[scan] hal: cursor \(await scanner.state().cursor), \(samples.count) sample(s) in last \(days)d"))
+    let byModel = Dictionary(grouping: samples, by: \.model)
+    for model in byModel.keys.sorted() {
+        let group = byModel[model]!
+        let rates = group.compactMap(\.tokensPerSecond).sorted()
+        let rateText = rates.isEmpty ? "–"
+            : "p50 \(String(format: "%.1f tok/s", percentile(rates, 0.50)))"
+            + " p90 \(String(format: "%.1f tok/s", percentile(rates, 0.90)))"
+        print(redact("  \(model): n=\(group.count) tok/s \(rateText)"))
+    }
+    // Error-code histogram: codes and counts only, never row content.
+    // (recentErrors is the scanner's rolling 7-day buffer, so a window
+    // beyond that shows only its tail.)
+    let errors = await scanner.recentErrors(now: now, window: Double(days) * 86_400)
+    let byCode = Dictionary(grouping: errors, by: \.code).mapValues(\.count)
+    if byCode.isEmpty {
+        print(redact("  no hal error rows captured in window"))
+    }
+    for code in byCode.keys.sorted() {
+        print(redact("  error \(code) => \(byCode[code]!)"))
+    }
+    if samples.isEmpty {
+        FileHandle.standardError.write(Data("hal scan produced no samples — check the db path\n".utf8))
         exit(1)
     }
 }

@@ -58,6 +58,36 @@ struct VerdictEngineTests {
             fetchedAt: now, lastError: error)
     }
 
+    /// hal sample: the OpenCode db never records a first-token time, so
+    /// hal probes carry ttft nil by construction.
+    private func halSample(
+        at offset: TimeInterval, tokPerSec: Double?, model: String = "qwen3.8-flash"
+    ) -> ProbeSample {
+        ProbeSample(
+            provider: .hal, model: model, sessionKey: "opencode.db#\(offset)-\(UUID().uuidString)",
+            ttft: nil, duration: 5, tokensPerSecond: tokPerSec,
+            outcome: .ok, timestamp: segmentStart.addingTimeInterval(offset))
+    }
+
+    /// `count` hal fillers at tok/s 80, at 60 s steps starting at
+    /// `firstOffset`.
+    private func halFast(
+        _ count: Int, firstOffset: TimeInterval = 0, model: String = "qwen3.8-flash"
+    ) -> [ProbeSample] {
+        (0..<count).map {
+            halSample(at: firstOffset + Double($0) * 60, tokPerSec: 80, model: model)
+        }
+    }
+
+    /// 24 hal history samples outside the recency window at tok/s 78/82 ⇒
+    /// learned median 80, MAD 2.
+    private func halHistory(model: String = "qwen3.8-flash") -> [ProbeSample] {
+        (0..<24).map {
+            halSample(at: -((40.0 + Double($0) * 2) * 60),
+                      tokPerSec: $0.isMultiple(of: 2) ? 78 : 82, model: model)
+        }
+    }
+
     private func controls(_ latencies: [Double?], id: ProviderID = .claude) -> [ControlSample] {
         latencies.enumerated().map { index, latency in
             ControlSample(
@@ -318,6 +348,107 @@ struct VerdictEngineTests {
         #expect(text.contains("✅ operational"))
         #expect(text.contains("Claude Crawling"))
         #expect(text.contains("claude-opus-5-5") || text.contains("21.4"))
+    }
+
+    // MARK: - hal (local Qwen box)
+
+    @Test func halNeverSeesControlOrLimitVerdicts() {
+        // hal has no limits endpoint (fetchLimits returns []) and never gets
+        // control samples, so with a fresh measuring stream and no windows
+        // it can never land on UNKNOWN(control), LIMITED, or BUSY.
+        let result = verdict(.hal, probes: halFast(24, firstOffset: 36 * 60))
+        #expect(result.state == .ok)
+        #expect(result.reasons.isEmpty)
+
+        // A slow tail with zero control evidence reads as slow, not as our
+        // network and not as quota either.
+        let slow = halHistory() + [halSample(at: 37 * 60, tokPerSec: 40),
+                                   halSample(at: 38 * 60, tokPerSec: 40),
+                                   halSample(at: 39 * 60, tokPerSec: 40)]
+        let troubled = verdict(.hal, probes: slow)
+        #expect(troubled.state != .unknown)
+        #expect(troubled.state != .limited)
+        #expect(troubled.state != .busy)
+        #expect(!troubled.reasons.map(\.code).contains("control"))
+        #expect(!troubled.reasons.map(\.code).contains("window_pct"))
+    }
+
+    @Test func halTokOnlySamplesDriveDegradation() {
+        // hal probes have ttft nil on every sample, so the probe rules must
+        // work purely on tok/s vs the learned median. History median 80 /
+        // MAD 2 ⇒ a 71 tok/s tail is z = 9/2 = 4.5 (over zWarn, under
+        // zCrawl); a 40 tok/s tail is z = 20.
+        let moderate = halHistory() + [halSample(at: 37 * 60, tokPerSec: 71),
+                                       halSample(at: 38 * 60, tokPerSec: 71),
+                                       halSample(at: 39 * 60, tokPerSec: 71)]
+        let degraded = verdict(.hal, probes: moderate)
+        #expect(degraded.state == .degraded)
+        #expect(degraded.reasons.first?.code == "toks_z")
+        #expect(degraded.reasons.first?.detail.contains("tok/s") == true)
+        #expect(degraded.reasons.first?.detail.contains("qwen3.8-flash") == true)
+
+        let slow = halHistory() + [halSample(at: 37 * 60, tokPerSec: 40),
+                                   halSample(at: 38 * 60, tokPerSec: 40),
+                                   halSample(at: 39 * 60, tokPerSec: 40)]
+        let crawling = verdict(.hal, probes: slow)
+        #expect(crawling.state == .crawling)
+        #expect(crawling.reasons.first?.code == "toks_z")
+    }
+
+    @Test func halCountsInMenuBarLadder() {
+        // hal has no percent windows, but its verdict still rides the colour
+        // ladder: degraded hal tints the menu bar amber while Claude and
+        // Codex are healthy (and the title keeps the percent leader).
+        let snapshots: [ProviderID: ProviderSnapshot] = [
+            .claude: snapshot(.claude, percents: [40]),
+            .codex: snapshot(.codex, percents: [20]),
+            .hal: snapshot(.hal),
+        ]
+        func ok(_ id: ProviderID) -> Verdict {
+            Verdict(provider: id, state: .ok, reasons: [], computedAt: now)
+        }
+        let halDegraded = Verdict(
+            provider: .hal, state: .degraded,
+            reasons: [VerdictReason(
+                code: "toks_z",
+                detail: "z=4.5 · 71.0 tok/s vs 80.0 median · qwen3.8-flash")],
+            computedAt: now)
+        let result = StatusItemModel.title(
+            for: snapshots, pollInterval: 300, now: now,
+            verdicts: [.claude: ok(.claude), .codex: ok(.codex), .hal: halDegraded])
+        #expect(result.title == "✳ 40%")
+        #expect(result.color == .amber)
+    }
+
+    @Test func divergenceIgnoresHal() throws {
+        // hal is the homelab box: there is no hosted status page that could
+        // agree or disagree with it, so its verdicts stay out of the banner.
+        let halDegraded = Verdict(
+            provider: .hal, state: .degraded,
+            reasons: [VerdictReason(
+                code: "toks_z",
+                detail: "z=4.5 · 71.0 tok/s vs 80.0 median · qwen3.8-flash")],
+            computedAt: now)
+        let halProbe = halSample(at: 39 * 60, tokPerSec: 71)
+        func ok(_ id: ProviderID) -> Verdict {
+            Verdict(provider: id, state: .ok, reasons: [], computedAt: now)
+        }
+        // hal degraded + Claude/Codex OK + no status signal ⇒ nothing to say.
+        #expect(VerdictEngine.divergence(
+            verdicts: [.claude: ok(.claude), .codex: ok(.codex), .hal: halDegraded],
+            statuses: [:], latestProbes: [halProbe]) == nil)
+
+        // And hal trouble must not silence Claude's genuine banner.
+        let slow = fast(24) + [sample(at: 37 * 60, ttft: 21, tokPerSec: 9),
+                               sample(at: 38 * 60, ttft: 21, tokPerSec: 9),
+                               sample(at: 39 * 60, ttft: 21, tokPerSec: 9)]
+        let crawl = verdict(probes: slow, controls: controls([0.4, 0.4, 0.4]))
+        #expect(crawl.state == .crawling)
+        let banner = try #require(VerdictEngine.divergence(
+            verdicts: [.claude: crawl, .hal: halDegraded],
+            statuses: [.claude: .operational], latestProbes: slow + [halProbe]))
+        #expect(banner.contains("Claude Crawling"))
+        #expect(!banner.contains("Hal"))
     }
 
     // MARK: - §13 acceptance scenario

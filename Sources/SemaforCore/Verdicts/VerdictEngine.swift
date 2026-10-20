@@ -216,6 +216,11 @@ public enum VerdictEngine {
 
     // MARK: - Labels and divergence
 
+    /// hal is a local inference box (spec §3): there is no hosted status page
+    /// that could agree or disagree with it, so its verdicts never take part
+    /// in the divergence banner — not as a subject, and not as a silencer.
+    private static let neverDivergingProviders: Set<ProviderID> = [.hal]
+
     public static func stateLabel(_ state: ProviderState) -> String {
         switch state {
         case .ok: return "OK"
@@ -236,7 +241,8 @@ public enum VerdictEngine {
         latestProbes: [ProbeSample]
     ) -> String? {
         let troubled = verdicts.values.filter {
-            [.degraded, .crawling, .limited].contains($0.state)
+            !neverDivergingProviders.contains($0.provider)
+                && [.degraded, .crawling, .limited].contains($0.state)
         }
         guard !troubled.isEmpty else { return nil }
         for verdict in troubled {

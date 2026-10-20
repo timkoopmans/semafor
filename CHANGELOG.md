@@ -1,5 +1,72 @@
 # Changelog
 
+## 0.3.0 — hal monitoring (Qwen on the homelab)
+
+Your own Qwen box is now a provider like any other. Semafor watches the
+OpenCode sqlite db (`~/.local/share/opencode/opencode.db`, overridable in
+Settings) that hal writes while you work: no hooks, no log tailing, no
+traffic added to the inference.
+
+**What's in**
+
+- A Qwen section in the popover (`◈`), led by a serving line from the
+  server's `/models` health probe (`serving Qwen3.8-Flash-Next`) with a swap
+  warning when the box answers with something else
+  (`serving something-else · not Qwen3.8-Flash-Next ⚠`) and `serving
+  unknown` when it is unreachable.
+- tok/s and token tiles for hal, each with its age (`24 tok/s · 5m ago`).
+  The db records no first-token time, so hal has honest tok/s tiles only.
+- Error line from scanner-captured API errors: `errors today: 3× 429 ·
+  1× 500 · last 12m ago`, amber when any code in the window is 429, 5xx, or
+  529.
+- hal rides the verdict ladder with guards for what a local box doesn't
+  have: no limits endpoint means it can never read Limited or Busy, zero
+  control samples never trip Unknown (control), and degradation runs purely
+  on tok/s against the learned median (ttft-nil samples score fine). The
+  divergence banner ignores hal entirely: a homelab has no status page to
+  agree with, and a degraded hal must not silence a genuine Claude or Codex
+  banner either.
+- Settings: new "Local Qwen (hal)" section (enabled, base URL, expected
+  model name, db path); toggling hal on or off takes effect on the next
+  tick, no restart.
+- `just live-scan hal` / `swift run SemaforSmoke scan hal --days N`:
+  one-shot scan of the real db against throwaway state and store (the
+  running app's cursor is never touched), printing per-model n, tok/s
+  p50/p90, and an error-code histogram, counts only through `redact()`.
+  Verified on 850 real calls: `Qwen3.8-Flash-Next: n=424 tok/s p50 57.8
+  p90 138.1`, `qwen3.8-27b: n=426 p50 87.1 p90 114.6`.
+
+Also shipping, from the never-released 0.2.2/0.2.3:
+
+- Metric tiles carry their measurement age (`3.2 s ttft · 5m ago`) and the
+  provider status line too (`Provider API error (429) · 12m ago`), so a
+  failure from the last poll cycle isn't mistaken for something happening
+  right now.
+- 7-day tokens/day bar strip per provider, today tinted, caption
+  "7.9k tok today · peak 38k this week". `ProbeSample` gained
+  `tokens: Int?`: Claude carries the final cumulative `output_tokens`,
+  Codex the accepted-burst total (never rate×duration, which lies across
+  idle gaps), hal the db's per-call output. Legacy rows decode as nil and
+  simply draw no strip until counts exist.
+- Fixed `ProbeSample.tokens` never surviving a store round-trip: the
+  hand-rolled encoder dropped the new field; the round-trip test now
+  asserts on the raw JSON.
+- Codex ttft now anchors on the first MODEL output (reasoning, assistant
+  message, tool call). The CLI logs the prompt echo ~17 ms after
+  `task_started`, so the old "first response_item" proxy read ~0.0 s for
+  every turn. Tool-call turns keep a ttft (time-to-first-output is a valid
+  degradation signal); turns with no model output stay nil.
+- Honest "usual" on tiles: the baseline pool is the store's full history
+  per provider, and a segment short of `baselineMinSamples` now relaxes
+  bucket → weekday-split → both before falling back to the absolute
+  defaults (never across model or provider). Root cause of tiles printing
+  "usual 20 / usual 8.0 s": the current 6-hour bucket was empty in the
+  evening, so both providers silently compared to defaults.
+- Settings rows use proper `LabeledContent` (labels no longer hyphenate
+  into "Sam-ple recen-cy"), fields right-aligned, window widened to 420.
+  Footer: live per-second poll counter ("poll 37 s ago") that can't be
+  truncated by the buttons, and "Test now" renamed "Refresh".
+
 ## 0.2.1 — metric tiles (dogfood feedback)
 
 Sparklines alone didn't answer "is this fast or slow": they auto-scaled, so
@@ -93,30 +160,4 @@ dependencies, macOS 14+.
       popover layout, Test now / Pause behavior.
 - [ ] First-run Keychain approval for the `Claude Code-credentials` item
       (click Always Allow when macOS asks once per new build).
-## 0.2.2 — token history + settings polish
 
-- 7-day tokens/day bar strip per provider (today tinted, caption "7.9k tok
-  today · peak 38k this week"). `ProbeSample` gained `tokens: Int?` — Claude
-  samples carry the final cumulative `output_tokens`, Codex samples the
-  accepted-burst total (never rate×duration, which lies across idle gaps).
-  Legacy rows decode as nil and simply draw no strip until counts exist.
-- Settings window: proper `LabeledContent` rows — labels no longer hyphenate
-  into "Sam-ple recen-cy", fields right-aligned, window widened to 420.
-- Footer: live per-second poll counter ("poll 37 s ago", own TimelineView so
-  it ticks between UI rebuilds); "Test now" renamed "Refresh"; the counter
-  can no longer be truncated by the buttons.
-## 0.2.3 — honest "usual": baselines and Codex ttft fixed
-
-- Tiles no longer print the settings defaults as learned baselines. The
-  baseline pool widens from 24 h to the store's full history per provider,
-  and a segment that is short of baselineMinSamples now relaxes bucket →
-  weekday-split → both before falling back (never across model/provider).
-  Root cause of "usual 20 / usual 8.0 s": the current 6-hour bucket was
-  empty in the evening, so both providers silently compared to defaults.
-- Codex ttft now anchors on the first MODEL output (reasoning, assistant
-  message, tool call). The CLI logs the prompt echo ~17 ms after
-  task_started; the old "first response_item" proxy read ~0.0 s for every
-  turn. Tool-call turns keep a ttft now (time-to-first-output is a valid
-  degradation signal); turns with no model output stay nil.
-- BaselineEngine relaxation tests incl. model/provider cross-contamination
-  guard; fixture grew the real-world user-echo line. 186 tests.
