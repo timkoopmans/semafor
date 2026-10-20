@@ -1,0 +1,12 @@
+{
+  "page": {
+    "id": "01FIXTURE00000000000000000",
+    "name": "OpenAI",
+    "updated_at": "2026-10-20T04:41:21.715Z",
+    "url": "https://status.openai.com/"
+  },
+  "status": {
+    "description": "All Systems Operational",
+    "indicator": "none"
+  }
+}
