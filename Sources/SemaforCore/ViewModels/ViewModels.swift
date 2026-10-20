@@ -92,7 +92,8 @@ public struct ProviderSectionModel: Equatable, Sendable {
             usedPercent: window.usedPercent,
             windowSeconds: window.windowSeconds,
             resetsAt: window.resetsAt,
-            now: now
+            now: now,
+            threshold: settings.paceDeltaPoints
         ) {
         case .aheadOfPace(let delta):
             return "ahead of pace (+\(Int(delta.rounded())) pts)"

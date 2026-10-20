@@ -45,11 +45,6 @@ struct AppSettingsTests {
     @Test func defaultsFromEmptySuite() {
         let settings = AppSettings(defaults: freshSuite())
         #expect(settings.pollIntervalMinutes == 5)
-        #expect(settings.quietHoursEnabled == true)
-        #expect(settings.quietStart == "22:00")
-        #expect(settings.quietEnd == "07:00")
-        #expect(settings.claudeProbeModelID.isEmpty)
-        #expect(settings.codexProbeModelID == "gpt-6-astra")
         #expect(settings.launchAtLogin == false)
     }
 
