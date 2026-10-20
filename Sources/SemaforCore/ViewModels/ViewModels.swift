@@ -12,6 +12,9 @@ public struct ProviderSectionModel: Equatable, Sendable {
         public let dimmed: Bool
     }
 
+    public let providerID: ProviderID
+    public let displayName: String
+    public let glyph: String
     public let rows: [WindowRow]
     public let headline: String?
     public let statusLine: String
@@ -24,6 +27,9 @@ public struct ProviderSectionModel: Equatable, Sendable {
         settings: AppSettings,
         pollInterval: TimeInterval
     ) {
+        providerID = snapshot.providerID
+        displayName = snapshot.providerID.displayName
+        glyph = snapshot.providerID.menuGlyph
         let stale = now.timeIntervalSince(snapshot.fetchedAt) > 3 * pollInterval
         isStale = stale
 
@@ -147,8 +153,9 @@ public enum StatusItemModel {
             leader = candidate
         }
 
-        let glyph = leader.0 == .claude ? "✳" : "⬡"
-        return Result(title: "\(glyph) \(Int(leader.1.rounded()))%", color: color(for: snapshots, worst: leader.1))
+        return Result(
+            title: "\(leader.0.menuGlyph) \(Int(leader.1.rounded()))%",
+            color: color(for: snapshots, worst: leader.1))
     }
 
     /// Red outranks amber outranks grey, exactly as the plan lists the ladder:

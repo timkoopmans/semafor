@@ -174,6 +174,22 @@ struct SampleStoreTests {
         #expect(await store.lastReadCorruptLineCount == 0)
     }
 
+    @Test func deleteAllRemovesStoreDirectory() async throws {
+        let dir = try tempDirectory()
+        let store = makeStore(directory: dir)
+        try await store.append(limitsRecord(.claude, 10))
+        #expect(FileManager.default.fileExists(atPath: dir.path))
+
+        try await store.deleteAll()
+
+        #expect(!FileManager.default.fileExists(atPath: dir.path))
+    }
+
+    @Test func deleteAllOnMissingDirectoryIsNoOp() async throws {
+        let store = makeStore(directory: try tempDirectory())
+        try await store.deleteAll()  // never appended; must not throw
+    }
+
     static func dayString(_ date: Date, calendar: Calendar) -> String {
         let formatter = DateFormatter()
         formatter.calendar = calendar

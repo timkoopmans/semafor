@@ -67,6 +67,13 @@ public actor SampleStore: LimitsWriting {
         try rotate(type: type, now: now)
     }
 
+    /// Settings "Reset data": wipe the whole store (all days, all types).
+    public func deleteAll() async throws {
+        if fileManager.fileExists(atPath: config.directory.path) {
+            try fileManager.removeItem(at: config.directory)
+        }
+    }
+
     public func limits(provider: ProviderID, since: Date) -> [UsageWindow] {
         var windows: [UsageWindow] = []
         var corruptLines = 0

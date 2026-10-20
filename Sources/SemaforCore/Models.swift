@@ -3,6 +3,21 @@ import Foundation
 public enum ProviderID: String, Codable, CaseIterable, Sendable {
     case claude
     case codex
+
+    public var displayName: String {
+        switch self {
+        case .claude: return "Claude"
+        case .codex: return "Codex"
+        }
+    }
+
+    /// Single source of truth for the menu-bar glyph (spec §9).
+    public var menuGlyph: String {
+        switch self {
+        case .claude: return "✳"
+        case .codex: return "⬡"
+        }
+    }
 }
 
 public enum WindowName: String, Codable, Equatable, Sendable {

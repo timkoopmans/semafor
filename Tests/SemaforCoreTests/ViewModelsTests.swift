@@ -34,6 +34,9 @@ struct ProviderSectionModelTests {
             snapshot: snapshot(windows: windows), projections: [:], now: now,
             settings: settings(), pollInterval: pollInterval)
 
+        #expect(model.providerID == .claude)
+        #expect(model.displayName == "Claude")
+        #expect(model.glyph == "✳")
         #expect(model.rows.count == 2)
         #expect(model.rows[0].label == "5-hour")
         #expect(model.rows[0].percentText == "62%")
